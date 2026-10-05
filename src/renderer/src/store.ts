@@ -3,6 +3,7 @@ import type { AppSettings, HistoryItem, IndexerInfo, IndexerStatus, Release, Res
 import type { ChipId } from '../../core/filters'
 import { groupKey } from '../../core/release'
 import { api } from './api'
+import { applyTheme } from './theme'
 import { resolveLang, setLang, t, translateError, type Lang } from './i18n'
 
 export type Page = 'search' | 'downloads' | 'library' | 'trackers' | 'settings'
@@ -38,6 +39,8 @@ interface State {
   searchId?: string
   running: boolean
   releases: Release[]
+  /** The title in other languages, searched too */
+  alsoSearched: string[]
   statuses: Record<string, IndexerStatus>
   elapsedMs?: number
   setQuery: (q: string) => void
@@ -110,6 +113,7 @@ export const useStore = create<State>((set, get) => ({
   },
   running: false,
   releases: [],
+  alsoSearched: [],
   statuses: {},
   setQuery: (query) => set({ query }),
   setChips: (chips) => set({ chips }),
@@ -119,7 +123,7 @@ export const useStore = create<State>((set, get) => ({
     if (!query.trim()) return
     if (searchId) void api.cancelSearch(searchId)
     const id = crypto.randomUUID()
-    set({ running: true, releases: [], statuses: {}, elapsedMs: undefined, searchId: id, page: 'search', title: null })
+    set({ running: true, releases: [], alsoSearched: [], statuses: {}, elapsedMs: undefined, searchId: id, page: 'search', title: null })
     await api.search({ searchId: id, q: query })
     void api.lookupTitle(query).then((title) => get().searchId === id && set({ title }))
   },
@@ -206,6 +210,7 @@ export const errorText = (e: unknown) => translateError(String((e as Error)?.mes
 function applySettings(settings: AppSettings) {
   const lang = resolveLang(settings.language)
   setLang(lang)
+  applyTheme(settings.theme, settings.accent)
   useStore.setState({ settings, lang })
 }
 
@@ -217,6 +222,7 @@ api.onSearchEvent((e) => {
   const s = useStore.getState()
   if (e.searchId !== s.searchId) return
   if (e.type === 'results') useStore.setState({ releases: [...s.releases, ...e.releases] })
+  else if (e.type === 'variants') useStore.setState({ alsoSearched: e.names })
   else if (e.type === 'status') useStore.setState({ statuses: { ...s.statuses, [e.status.indexerId]: e.status } })
   else if (e.type === 'done') {
     useStore.setState({ running: false, elapsedMs: e.elapsedMs })

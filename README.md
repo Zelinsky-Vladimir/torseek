@@ -77,6 +77,7 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 **Search**
 - **public trackers only** - nothing to register for, no invites: the 86 public Jackett definitions plus
   hand-written **Knaben, Torrents.csv, SubsPlease, Anilibria, AudioBook Bay**
+- **search in other languages**: type «дюна» and English trackers also get "Dune", Chinese ones "沙丘" (titles from Wikidata)
 - streaming results, duplicates merged across trackers, quality badges, category / quality / seed filters
 - **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
 - **favorites**, **search history**, **watched searches**: re-checked in the background, notification on new releases
@@ -92,7 +93,7 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 **Integration & updates**
 - **Torznab API** for Sonarr / Radarr / Lidarr / Prowlarr (Jackett-compatible URLs, local only, API key)
 - tracker definitions auto-update daily from the Jackett repo; the app self-updates from GitHub Releases (Windows/Linux)
-- UI in 13 languages
+- UI in 13 languages; 6 color themes (plus follow-the-system) and 7 accent colors
 
 Not yet: other C#-only Jackett indexers (AnimeBytes, Gazelle-based sites, Spanish sites), code signing,
 macOS self-update (needs signing), right-to-left languages.

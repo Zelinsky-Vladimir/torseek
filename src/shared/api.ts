@@ -5,6 +5,7 @@ import type { Release } from '../core/release'
 import type { IndexerStatus } from '../core/search'
 import type { LangSetting } from './i18n'
 import type { ResultFilters } from '../core/filters'
+import type { AccentId, ThemeSetting } from './themes'
 
 export type { ResultFilters }
 
@@ -45,6 +46,8 @@ export type SearchEvent =
   | { type: 'status'; searchId: string; status: IndexerStatus }
   | { type: 'results'; searchId: string; indexerId: string; releases: Release[] }
   | { type: 'done'; searchId: string; elapsedMs: number }
+  /** The title in other languages, searched too on trackers of those languages */
+  | { type: 'variants'; searchId: string; names: string[] }
 
 export type TorrentState = 'metadata' | 'downloading' | 'seeding' | 'paused' | 'done' | 'error'
 
@@ -100,6 +103,10 @@ export interface AppSettings {
   openAtLogin: boolean
   /** Movie/series card from Cinemeta above results */
   showTitleInfo: boolean
+  /** Also search the title's name in each tracker's language (Wikidata) */
+  searchOtherLanguages: boolean
+  theme: ThemeSetting
+  accent: AccentId
   /** Hours between background re-checks of watched searches */
   watchIntervalHours: number
   /** Local Torznab API for Sonarr / Radarr */

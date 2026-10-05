@@ -2,7 +2,9 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { Copy, Download, FolderOpen, KeyRound, RefreshCw } from 'lucide-react'
 import type { AppSettings, DefinitionsStatus, TorznabStatus } from '../../../shared/api'
 import { api } from '../api'
-import { LANGUAGES, t } from '../i18n'
+import { LANGUAGES, t, type Key } from '../i18n'
+import { ACCENT_IDS, ACCENTS, resolveTheme, THEME_IDS, THEMES, type AccentId, type Palette, type ThemeSetting } from '../../../shared/themes'
+import { cx } from '../format'
 import { errorText, useStore } from '../store'
 import { Button, Input, Toggle } from '../ui'
 
@@ -45,6 +47,8 @@ export function SettingsPage() {
             <MagnetRow />
           </Section>
 
+          <AppearanceSection settings={settings} save={save} />
+
           <Section title={t('set.section.downloads')}>
             <Row label={t('set.saveTo')} hint={t('set.saveToHint')}>
               <div className="flex gap-2">
@@ -78,6 +82,9 @@ export function SettingsPage() {
             <Row label={t('set.timeout')} hint={t('set.timeoutHint')}>
               <NumberInput value={settings.searchTimeoutSec} min={5} max={120} onCommit={(v) => save({ searchTimeoutSec: v })} />
             </Row>
+            <Row label={t('set.otherLanguages')} hint={t('set.otherLanguagesHint')}>
+              <Toggle checked={settings.searchOtherLanguages} onChange={(v) => save({ searchOtherLanguages: v })} />
+            </Row>
             <Row label={t('set.titleInfo')} hint={t('set.titleInfoHint')}>
               <Toggle checked={settings.showTitleInfo} onChange={(v) => save({ showTitleInfo: v })} />
             </Row>
@@ -102,6 +109,62 @@ export function SettingsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function AppearanceSection({ settings, save }: { settings: AppSettings; save: (p: Partial<AppSettings>) => void }) {
+  const scheme = THEMES[resolveTheme(settings.theme, window.matchMedia('(prefers-color-scheme: dark)').matches)].scheme
+  return (
+    <Section title={t('set.section.appearance')}>
+      <div className="px-4 py-3.5">
+        <div className="text-[13.5px] font-medium">{t('set.theme')}</div>
+        <div className="mt-3 grid grid-cols-7 gap-2.5">
+          {(['system', ...THEME_IDS] as ThemeSetting[]).map((id) => (
+            <ThemeCard key={id} id={id} accent={settings.accent} active={settings.theme === id} onClick={() => save({ theme: id })} />
+          ))}
+        </div>
+      </div>
+      <Row label={t('set.accent')}>
+        <div className="flex gap-2.5">
+          {ACCENT_IDS.map((a) => (
+            <button
+              key={a}
+              aria-label={a}
+              title={a}
+              onClick={() => save({ accent: a })}
+              className={cx('size-6 rounded-full ring-offset-2 ring-offset-panel transition-transform hover:scale-110', settings.accent === a && 'ring-2 ring-fg')}
+              style={{ background: ACCENTS[a][scheme][0] }}
+            />
+          ))}
+        </div>
+      </Row>
+    </Section>
+  )
+}
+
+// A tiny window drawn in the theme's own colors
+function ThemeCard({ id, accent, active, onClick }: { id: ThemeSetting; accent: AccentId; active: boolean; onClick: () => void }) {
+  const preview = (p: Palette) => (
+    <div className="flex flex-1 flex-col gap-1 p-1.5" style={{ background: p.bg }}>
+      <div className="h-1.5 w-3/4 rounded-sm" style={{ background: p['line-2'] }} />
+      <div className="flex-1 rounded" style={{ background: p.panel, border: `1px solid ${p.line}` }} />
+      <div className="h-1.5 w-1/2 rounded-sm" style={{ background: ACCENTS[accent][p.scheme][0] }} />
+    </div>
+  )
+  return (
+    <button onClick={onClick} className="group min-w-0 text-left" aria-pressed={active}>
+      <div className={cx('flex h-16 overflow-hidden rounded-lg border', active ? 'border-accent ring-1 ring-accent' : 'border-line group-hover:border-line-2')}>
+        {id === 'system' ? (
+          <>
+            {preview(THEMES.dark)}
+            {preview(THEMES.light)}
+          </>
+        ) : (
+          preview(THEMES[id])
+        )}
+      </div>
+      <div className={cx('mt-1.5 truncate text-center text-[12px]', active ? 'text-fg' : 'text-muted')}>{t(`theme.${id}` as Key)}</div>
+    </button>
   )
 }
 

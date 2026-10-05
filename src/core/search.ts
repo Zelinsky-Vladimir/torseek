@@ -21,6 +21,11 @@ export interface SearchAllOptions {
   signal?: AbortSignal
   onResults: (indexerId: string, releases: Release[]) => void
   onStatus: (status: IndexerStatus) => void
+  /**
+   * More keywords for one tracker (say, the title in the tracker's language), searched
+   * after the main query succeeds. Results already found are not reported twice.
+   */
+  extraQueries?: (ix: Indexer) => Promise<string[]>
 }
 
 export async function searchAll(indexers: Indexer[], query: SearchQuery, opts: SearchAllOptions): Promise<void> {
@@ -37,14 +42,33 @@ export async function searchAll(indexers: Indexer[], query: SearchQuery, opts: S
       }
       const started = Date.now()
       opts.onStatus({ ...base, state: 'running' })
-      const timeout = AbortSignal.timeout(timeoutMs)
-      const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
+      const seen = new Set<string>()
+      const run = async (q: SearchQuery) => {
+        const timeout = AbortSignal.timeout(timeoutMs)
+        const combined = signal ? AbortSignal.any([signal, timeout]) : timeout
+        try {
+          const releases = (await raceAbort(ix.search(q, combined), combined)).filter((r) => {
+            const key = r.guid || r.link || r.magnet || r.title
+            return !seen.has(key) && !!seen.add(key)
+          })
+          opts.onResults(ix.id, releases)
+          return releases.length
+        } catch (e) {
+          throw Object.assign(e instanceof Error ? e : new Error(String(e)), { timedOut: timeout.aborted })
+        }
+      }
       try {
-        const releases = await raceAbort(ix.search(query, combined), combined)
-        opts.onResults(ix.id, releases)
-        opts.onStatus({ ...base, state: 'done', count: releases.length, elapsedMs: Date.now() - started })
+        let count = await run(query)
+        const extra = opts.extraQueries && !signal?.aborted ? await opts.extraQueries(ix).catch(() => []) : []
+        for (const q of extra) {
+          if (signal?.aborted) break
+          // The main query already worked; a failing extra one doesn't make the tracker red
+          count += await run({ ...query, q }).catch(() => 0)
+        }
+        opts.onStatus({ ...base, state: 'done', count, elapsedMs: Date.now() - started })
       } catch (e) {
-        const state: IndexerState = signal?.aborted ? 'cancelled' : timeout.aborted ? 'timeout' : (e as Error)?.name === 'CloudflareError' ? 'blocked' : 'error'
+        const timedOut = (e as { timedOut?: boolean }).timedOut
+        const state: IndexerState = signal?.aborted ? 'cancelled' : timedOut ? 'timeout' : (e as Error)?.name === 'CloudflareError' ? 'blocked' : 'error'
         opts.onStatus({ ...base, state, error: state === 'error' ? describeError(e) : undefined, elapsedMs: Date.now() - started })
       }
     }

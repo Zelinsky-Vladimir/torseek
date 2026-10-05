@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, BellRing, ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star, X } from 'lucide-react'
+import { Bell, BellRing, ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star, X, Languages } from 'lucide-react'
 import { matchesFilters } from '../../../core/filters'
 import { groupReleases, type ReleaseGroup } from '../../../core/release'
 import type { IndexerStatus, TitleInfo } from '../../../shared/api'
@@ -278,7 +278,7 @@ const STATE_STYLE: Record<IndexerStatus['state'], string> = {
 
 function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<string, IndexerStatus>; running: boolean; onCancel: () => void }) {
   const [open, setOpen] = useState(false)
-  const { passChallenge } = useStore()
+  const { passChallenge, alsoSearched } = useStore()
   const list = Object.values(statuses)
   const finished = list.filter((s) => !['queued', 'running'].includes(s.state)).length
   const withResults = list.filter((s) => s.state === 'done' && (s.count ?? 0) > 0).length
@@ -306,6 +306,12 @@ function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<str
           )}
           <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} />
         </button>
+        {alsoSearched.length > 0 && (
+          <span className="flex min-w-0 items-center gap-1.5 text-faint" title={alsoSearched.join(', ')}>
+            <Languages className="size-3.5 shrink-0" />
+            <span className="truncate">{t('search.alsoSearched', { names: alsoSearched.join(', ') })}</span>
+          </span>
+        )}
         {running && (
           <button onClick={onCancel} className="ml-auto text-muted hover:text-fg">
             {t('search.stop')}

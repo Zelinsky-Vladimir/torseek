@@ -1,7 +1,7 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, safeStorage, shell, type WebContents } from 'electron'
 import { HttpClient } from '../core/http'
 import type { Api, ApiEvent, ApiMethod, AppSettings, DefinitionsStatus, NavigateTarget, Release, SearchEvent } from '../shared/api'
 import { IPC } from '../shared/api'
@@ -16,6 +16,8 @@ import { TorrentManager, type TorrentStoreShape } from './torrents'
 import { AppTray } from './tray'
 import { Library } from './library'
 import { lookupTitle } from './titles'
+import { findTitleNames, variantFor } from './title-names'
+import { resolveTheme, THEMES } from '../shared/themes'
 import { Watcher } from './watcher'
 import { groupKey } from '../core/release'
 import { TorznabServer } from '../core/torznab'
@@ -188,9 +190,17 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       searches.set(searchId, controller)
       const started = Date.now()
       const keys = new Set<string>()
+      const q = req.q.trim()
+      const names = settings().searchOtherLanguages ? findTitleNames(q).catch((e) => (log(`title names: ${(e as Error).message}`), null)) : Promise.resolve(null)
+      void names.then((n) => {
+        if (!n || controller.signal.aborted) return
+        const used = new Set(indexers.enabledIndexers().map((ix) => variantFor(n, ix.meta.language, q)))
+        used.delete(undefined)
+        if (used.size) send({ type: 'variants', searchId, names: [...used] as string[] })
+      })
       void indexers
         .search(
-          { q: req.q.trim(), categories: req.categories },
+          { q, categories: req.categories },
           {
             concurrency: settings().searchConcurrency,
             timeoutMs: settings().searchTimeoutSec * 1000,
@@ -200,6 +210,11 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
               send({ type: 'results', searchId, indexerId, releases })
             },
             onStatus: (status) => send({ type: 'status', searchId, status }),
+            extraQueries: async (ix) => {
+              const n = await names
+              const v = n && variantFor(n, ix.meta.language, q)
+              return v ? [v] : []
+            },
           },
         )
         .finally(() => {
@@ -284,6 +299,8 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       torrents.setLimits(settings().downloadLimit, settings().uploadLimit)
       if ('openAtLogin' in patch) applyLoginItem()
       if ('language' in patch) refreshTray()
+      if ('theme' in patch) applyThemeSource()
+      else if ('accent' in patch) applyWindowColors()
       if ('torznabEnabled' in patch || 'torznabPort' in patch) await applyTorznab()
       return settings()
     },
@@ -393,6 +410,22 @@ function registerIpc() {
 
 // --- window ---------------------------------------------------------------------------
 
+const windowPalette = () => THEMES[resolveTheme(store ? settings().theme : undefined, nativeTheme.shouldUseDarkColors)]
+
+// Native parts (scrollbars, menus, the title bar buttons) follow the chosen theme
+function applyThemeSource() {
+  const theme = settings().theme
+  nativeTheme.themeSource = !theme || theme === 'system' ? 'system' : windowPalette().scheme
+  applyWindowColors()
+}
+
+function applyWindowColors() {
+  if (!mainWindow || mainWindow.isDestroyed()) return
+  const p = windowPalette()
+  mainWindow.setBackgroundColor(p.bg)
+  if (process.platform !== 'darwin') mainWindow.setTitleBarOverlay({ color: '#00000000', symbolColor: p.muted, height: 44 })
+}
+
 function createWindow(show = true) {
   mainWindow = new BrowserWindow({
     width: 1320,
@@ -401,9 +434,9 @@ function createWindow(show = true) {
     minHeight: 600,
     show: false,
     icon: iconPath(),
-    backgroundColor: '#0b0d12',
+    backgroundColor: windowPalette().bg,
     titleBarStyle: 'hidden',
-    titleBarOverlay: { color: '#00000000', symbolColor: '#a1a7b3', height: 44 },
+    titleBarOverlay: { color: '#00000000', symbolColor: windowPalette().muted, height: 44 },
     webPreferences: {
       preload: join(here, '../preload/index.cjs'),
       contextIsolation: true,
@@ -471,6 +504,9 @@ app.whenReady().then(async () => {
     notifyOnComplete: true,
     openAtLogin: false,
     showTitleInfo: true,
+    searchOtherLanguages: true,
+    theme: 'system',
+    accent: 'violet',
     watchIntervalHours: 6,
     torznabEnabled: false,
     torznabPort: 9118,
@@ -550,6 +586,8 @@ app.whenReady().then(async () => {
   applyLoginItem()
 
   // Launched at login: start in the tray
+  nativeTheme.themeSource = settings().theme === 'system' ? 'system' : windowPalette().scheme
+  nativeTheme.on('updated', applyWindowColors)
   createWindow(!process.argv.includes('--hidden'))
   handleMagnetArgs(process.argv)
 
