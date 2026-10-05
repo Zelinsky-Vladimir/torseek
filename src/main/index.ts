@@ -585,8 +585,11 @@ app.whenReady().then(async () => {
   })
   if (appUpdater.supported && !automation) {
     setTimeout(() => void appUpdater.check(), 15_000)
-    // The app can live in the tray for weeks; look again every few hours
-    setInterval(() => appUpdater.status.state !== 'ready' && void appUpdater.check(), 6 * 3600_000)
+    // Every push to main is a release, so look often (electron-updater reads the
+    // releases feed on github.com, not the rate-limited REST API)
+    setInterval(() => {
+      if (!['checking', 'downloading', 'ready'].includes(appUpdater.status.state)) void appUpdater.check()
+    }, 60_000)
   }
 
   registerIpc()

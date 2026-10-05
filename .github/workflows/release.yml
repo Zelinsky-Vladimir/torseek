@@ -1,18 +1,52 @@
 name: Release
 
-# Push a tag like v0.2.0 (matching package.json "version") to build installers for all
-# platforms and publish them as a GitHub Release.
+# Every push to main becomes a release that installed apps pick up by themselves.
+# The version is package.json's when it is ahead of the last v* tag (bump major/minor
+# there), otherwise the last tag's patch + 1. Put [skip release] in a commit message
+# to push without releasing.
 
 on:
   push:
-    tags: ['v*']
+    branches: [main]
+    paths-ignore: ['**.md', 'screenshots/**']
+  workflow_dispatch:
 
 permissions:
   contents: write
 
+# One release at a time, in push order, so versions never collide
+concurrency:
+  group: release
+  cancel-in-progress: false
+
 jobs:
+  version:
+    if: ${{ !contains(github.event.head_commit.message, '[skip release]') }}
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.next.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - id: next
+        shell: bash
+        run: |
+          base=$(node -p "require('./package.json').version")
+          last=$(git tag -l 'v*' --sort=-v:refname | head -1)
+          last=${last#v}
+          if [ -z "$last" ] || { [ "$base" != "$last" ] && [ "$(printf '%s\n%s\n' "$base" "$last" | sort -V | tail -1)" = "$base" ]; }; then
+            version=$base
+          else
+            IFS=. read -r major minor patch <<<"$last"
+            version="$major.$minor.$((patch + 1))"
+          fi
+          echo "Releasing $version (package.json $base, last tag ${last:-none})"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
   build:
     name: Build (${{ matrix.os }})
+    needs: version
     strategy:
       fail-fast: true
       matrix:
@@ -26,21 +60,14 @@ jobs:
         with:
           node-version: 24
           cache: npm
-      - name: Tag matches package.json version
-        shell: bash
-        run: |
-          version="v$(node -p "require('./package.json').version")"
-          if [ "$version" != "$GITHUB_REF_NAME" ]; then
-            echo "Tag $GITHUB_REF_NAME does not match package.json version $version" >&2
-            exit 1
-          fi
       - run: npm ci
+      - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
       - run: npm test
       - run: npm run dist -- --publish never
       - uses: actions/upload-artifact@v4
         with:
           name: release-${{ runner.os }}
-          # installers plus the update metadata electron-updater will need later
+          # installers plus the update metadata electron-updater reads
           path: |
             dist/*.exe
             dist/*.dmg
@@ -51,7 +78,7 @@ jobs:
 
   publish:
     name: Publish GitHub Release
-    needs: build
+    needs: [version, build]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
@@ -61,8 +88,10 @@ jobs:
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ needs.version.outputs.version }}
         run: |
-          gh release create "$GITHUB_REF_NAME" artifacts/* \
+          gh release create "v$VERSION" artifacts/* \
             --repo "$GITHUB_REPOSITORY" \
-            --title "Torseek ${GITHUB_REF_NAME#v}" \
+            --target "$GITHUB_SHA" \
+            --title "Torseek $VERSION" \
             --generate-notes

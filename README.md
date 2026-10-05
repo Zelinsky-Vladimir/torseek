@@ -68,8 +68,9 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 
 - **CI** (`.github/workflows/ci.yml`): every push to `main` and every PR runs typecheck, tests and a build,
   then packages installers for Windows (NSIS), macOS (dmg, arm64 + x64) and Linux (AppImage) as artifacts.
-- **Release** (`.github/workflows/release.yml`): bump `version` in `package.json`, then
-  `git tag v0.2.0 && git push origin v0.2.0`. All three installers are built and attached to a GitHub Release.
+- **Release** (`.github/workflows/release.yml`): every push to `main` is released - the next patch version
+  (or `package.json`'s version when you bumped minor/major there), all three installers attached to a GitHub
+  Release; installed apps check for it every minute. `[skip release]` in the commit message skips it.
   Builds are unsigned for now (SmartScreen / Gatekeeper will warn).
 
 ## Features
