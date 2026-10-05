@@ -1,7 +1,7 @@
 {
   "name": "torseek",
   "productName": "Torseek",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "description": "Desktop meta-search for torrent trackers with a built-in client. Runs Jackett (Cardigann) definitions.",
   "license": "GPL-2.0-only",
   "type": "module",
