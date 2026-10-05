@@ -3,11 +3,15 @@
 declare module 'webtorrent' {
   import { EventEmitter } from 'node:events'
 
-  export interface TorrentFile {
+  export interface TorrentFile extends EventEmitter {
     name: string
     path: string
     length: number
     progress: number
+    downloaded: number
+    done: boolean
+    select(priority?: number): void
+    deselect(): void
   }
 
   export interface Torrent extends EventEmitter {
@@ -24,6 +28,9 @@ declare module 'webtorrent' {
     numPeers: number
     timeRemaining: number
     files: TorrentFile[]
+    pieces: unknown[]
+    select(start: number, end: number, priority?: number): void
+    deselect(start: number, end: number): void
     torrentFile?: Uint8Array
     destroy(opts?: { destroyStore?: boolean }, cb?: (err?: Error) => void): void
   }
@@ -31,7 +38,8 @@ declare module 'webtorrent' {
   namespace WebTorrent {
     interface Instance extends EventEmitter {
       torrents: Torrent[]
-      add(torrentId: string | Uint8Array, opts?: { path?: string }, onTorrent?: (t: Torrent) => void): Torrent
+      add(torrentId: string | Uint8Array, opts?: { path?: string; deselect?: boolean }, onTorrent?: (t: Torrent) => void): Torrent
+      createServer(opts: { hostname?: string; pathname?: string }, force: 'node'): import('node:http').Server
       throttleDownload(rate: number): void
       throttleUpload(rate: number): void
       destroy(cb?: (err?: Error) => void): void

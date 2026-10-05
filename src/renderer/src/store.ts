@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { AppSettings, IndexerInfo, IndexerStatus, Release, TorrentInfo } from '../../shared/api'
+import type { AppSettings, IndexerInfo, IndexerStatus, Release, TorrentInfo, UpdateStatus } from '../../shared/api'
 import { api } from './api'
 import { resolveLang, setLang, t, translateError, type Lang } from './i18n'
 
@@ -50,6 +50,7 @@ interface State {
   saveSettings: (patch: Partial<AppSettings>) => Promise<void>
 
   lang: Lang
+  update?: UpdateStatus
   toasts: Toast[]
   toast: (t: Omit<Toast, 'id'>) => void
   dismissToast: (id: number) => void
@@ -175,6 +176,9 @@ api.onSearchEvent((e) => {
 
 api.onTorrents((torrents) => useStore.setState({ torrents }))
 api.onIndexersChanged(() => void useStore.getState().loadIndexers())
+api.onUpdateStatus((update) => useStore.setState({ update }))
+api.onNavigate((page) => useStore.setState({ page }))
+void api.updateStatus().then((update) => useStore.setState({ update }))
 
 void api.getSettings().then(applySettings)
 void api.listTorrents().then((torrents) => useStore.setState({ torrents }))

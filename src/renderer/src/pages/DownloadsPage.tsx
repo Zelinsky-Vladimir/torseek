@@ -1,5 +1,6 @@
 import { useState } from 'react'
-import { ArrowDown, ArrowUp, FolderOpen, Inbox, Magnet, Pause, Play, Trash2, Users } from 'lucide-react'
+import { ArrowDown, ArrowUp, ChevronDown, FolderOpen, Inbox, Magnet, Pause, Play, Trash2, Users } from 'lucide-react'
+import { FilesPanel } from '../components/FilesPanel'
 import type { TorrentInfo, TorrentState } from '../../../shared/api'
 import { api } from '../api'
 import { cx, formatBytes, formatEta, formatSpeed } from '../format'
@@ -95,10 +96,14 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
   const active = ['downloading', 'metadata', 'seeding'].includes(t.state)
   const run = (p: Promise<unknown>) => p.catch((e) => toast({ kind: 'error', text: errorText(e) }))
   const tone = t.state === 'error' ? 'bad' : t.state === 'seeding' || t.state === 'done' ? 'good' : t.state === 'paused' ? 'muted' : 'accent'
+  const [open, setOpen] = useState(false)
 
   return (
-    <div className="group rounded-xl px-3 py-3 hover:bg-panel">
+    <div className={cx('group rounded-xl px-3 py-3 hover:bg-panel', open && 'bg-panel')}>
       <div className="flex items-center gap-4">
+        <button onClick={() => setOpen(!open)} className="-ml-1 rounded p-0.5 text-faint hover:text-fg" aria-label={tr('dl.files')} title={tr('dl.files')}>
+          <ChevronDown className={cx('size-4 transition-transform', !open && '-rotate-90')} />
+        </button>
         <div className="min-w-0 flex-1">
           <div className="truncate text-[13.5px] font-medium selectable" title={t.name}>
             {t.name}
@@ -115,6 +120,7 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
                 {t.numPeers}
               </span>
             )}
+            {t.partial && <span className="text-warn">{tr('dl.partial')}</span>}
             {t.source && <span className="text-faint">{tr('dl.from', { name: t.source.indexerName })}</span>}
             {t.error && <span className="truncate text-bad">{translateError(t.error)}</span>}
           </div>
@@ -155,6 +161,7 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
         <ProgressBar value={t.progress} tone={tone} className="flex-1" />
         <span className="w-11 text-right text-[12px] font-semibold tabular-nums text-muted">{Math.floor(t.progress * 100)}%</span>
       </div>
+      {open && <FilesPanel torrent={t} />}
     </div>
   )
 }

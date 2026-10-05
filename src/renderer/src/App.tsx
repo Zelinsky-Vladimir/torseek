@@ -1,6 +1,6 @@
 import type { ReactNode } from 'react'
 import { ArrowDown, ArrowUp, CheckCircle2, CircleAlert, Download, Info, Search, Server, Settings, X } from 'lucide-react'
-import { isMock } from './api'
+import { api, isMock } from './api'
 import { cx, formatSpeed } from './format'
 import { DownloadsPage } from './pages/DownloadsPage'
 import { SearchPage } from './pages/SearchPage'
@@ -28,7 +28,7 @@ export function App() {
 }
 
 function Sidebar() {
-  const { page, setPage, torrents, indexers } = useStore()
+  const { page, setPage, torrents, indexers, update } = useStore()
   const active = torrents.filter((t) => t.state === 'downloading' || t.state === 'metadata').length
   const down = torrents.reduce((s, t) => s + t.downloadSpeed, 0)
   const up = torrents.reduce((s, t) => s + t.uploadSpeed, 0)
@@ -57,7 +57,15 @@ function Sidebar() {
           {t('nav.settings')}
         </NavItem>
       </nav>
-      <div className="mt-auto space-y-1 rounded-lg px-2 py-2 text-[12px] tabular-nums text-muted">
+      {update?.state === 'ready' && (
+        <div className="no-drag mt-auto mb-2 rounded-lg border border-accent/40 bg-accent/10 p-2.5 text-[12px]">
+          <div className="leading-snug text-fg">{t('upd.ready', { version: update.available ?? '' })}</div>
+          <button onClick={() => void api.installUpdate()} className="mt-2 w-full rounded-md bg-accent-2 py-1 font-semibold text-white hover:bg-accent">
+            {t('upd.restart')}
+          </button>
+        </div>
+      )}
+      <div className={cx('space-y-1 rounded-lg px-2 py-2 text-[12px] tabular-nums text-muted', update?.state !== 'ready' && 'mt-auto')}>
         <div className="flex items-center gap-1.5">
           <ArrowDown className="size-3.5 text-accent" />
           {formatSpeed(down)}

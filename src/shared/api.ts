@@ -65,14 +65,22 @@ export interface TorrentInfo {
   path: string
   addedAt: number
   error?: string
+  /** Some files are excluded; length/progress cover the selected ones */
+  partial?: boolean
   source?: { indexerName: string; details?: string }
 }
 
 export interface TorrentFileInfo {
+  index: number
   name: string
   path: string
   length: number
+  downloaded: number
   progress: number
+  /** Included in the download */
+  selected: boolean
+  /** Video/audio the built-in player can try */
+  playable: boolean
 }
 
 export interface AppSettings {
@@ -86,7 +94,24 @@ export interface AppSettings {
   /** KB/s, 0 = unlimited */
   downloadLimit: number
   uploadLimit: number
+  /** Closing the window hides it to the tray */
+  closeToTray: boolean
+  notifyOnComplete: boolean
+  /** Launch hidden at OS login */
+  openAtLogin: boolean
 }
+
+export interface UpdateStatus {
+  state: 'idle' | 'checking' | 'latest' | 'downloading' | 'ready' | 'error' | 'unsupported'
+  /** Running version */
+  version: string
+  /** Version being downloaded / ready to install */
+  available?: string
+  percent?: number
+  error?: string
+}
+
+export type NavigateTarget = 'search' | 'downloads' | 'trackers' | 'settings'
 
 export interface DefinitionsStatus {
   checkedAt: number
@@ -122,7 +147,10 @@ export interface Api {
   resumeTorrent(infoHash: string): Promise<void>
   removeTorrent(infoHash: string, deleteFiles: boolean): Promise<void>
   openTorrentFolder(infoHash: string): Promise<void>
-  openTorrentFile(infoHash: string, path: string): Promise<void>
+  openTorrentFile(infoHash: string, index: number): Promise<void>
+  setFileSelection(infoHash: string, selected: number[]): Promise<void>
+  /** http://127.0.0.1 URL streaming the file while it downloads */
+  streamUrl(infoHash: string, index: number): Promise<string>
 
   getSettings(): Promise<AppSettings>
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
@@ -131,6 +159,17 @@ export interface Api {
   /** Pull the latest tracker definitions from the Jackett repo and reload trackers */
   updateDefinitions(): Promise<DefinitionsStatus>
   onIndexersChanged(cb: () => void): () => void
+
+  /** Whether Torseek is the OS handler for magnet: links */
+  getMagnetHandler(): Promise<boolean>
+  setMagnetHandler(on: boolean): Promise<boolean>
+
+  updateStatus(): Promise<UpdateStatus>
+  checkForUpdates(): Promise<UpdateStatus>
+  installUpdate(): Promise<void>
+  onUpdateStatus(cb: (s: UpdateStatus) => void): () => void
+  /** Main process asks the UI to switch page (e.g. a notification was clicked) */
+  onNavigate(cb: (page: NavigateTarget) => void): () => void
   openExternal(url: string): Promise<void>
 }
 
@@ -140,6 +179,9 @@ export const IPC = {
   searchEvent: 'api:search-event',
   torrents: 'api:torrents',
   indexersChanged: 'api:indexers-changed',
+  updateStatus: 'api:update-status',
+  navigate: 'api:navigate',
 } as const
 
-export type ApiMethod = Exclude<keyof Api, 'onSearchEvent' | 'onTorrents' | 'onIndexersChanged'>
+export type ApiEvent = 'onSearchEvent' | 'onTorrents' | 'onIndexersChanged' | 'onUpdateStatus' | 'onNavigate'
+export type ApiMethod = Exclude<keyof Api, ApiEvent>

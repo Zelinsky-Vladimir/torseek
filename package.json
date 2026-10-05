@@ -20,6 +20,7 @@
   },
   "dependencies": {
     "cheerio": "^1.2.0",
+    "electron-updater": "^6.8.9",
     "entities": "^8.1.0",
     "iconv-lite": "^0.7.3",
     "js-yaml": "^5.4.2",
@@ -64,6 +65,10 @@
         "filter": [
           "*.yml"
         ]
+      },
+      {
+        "from": "build/icon.png",
+        "to": "icon.png"
       }
     ],
     "asar": true,
@@ -103,7 +108,11 @@
     "asarUnpack": [
       "**/*.node"
     ],
-    "publish": null
+    "publish": {
+      "provider": "github",
+      "owner": "Zelinsky-Vladimir",
+      "repo": "torseek"
+    }
   },
   "author": {
     "name": "Vladimir",

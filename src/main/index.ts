@@ -1,24 +1,27 @@
 import { randomUUID } from 'node:crypto'
 import { join } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type WebContents } from 'electron'
+import { app, BrowserWindow, dialog, ipcMain, Notification, safeStorage, shell, type WebContents } from 'electron'
 import { HttpClient } from '../core/http'
-import type { Api, ApiMethod, AppSettings, Release, SearchEvent } from '../shared/api'
+import type { Api, ApiEvent, ApiMethod, AppSettings, DefinitionsStatus, NavigateTarget, Release, SearchEvent } from '../shared/api'
 import { IPC } from '../shared/api'
+import { resolveLanguage, translator } from '../shared/i18n'
+import { AppUpdater } from './app-updater'
+import { DefinitionsUpdater } from './definitions-updater'
 import { IndexerManager, type IndexerStoreShape, type WindowText } from './indexers'
-import { JsonStore } from './store'
-import { TorrentManager, type TorrentStoreShape } from './torrents'
 import { browserUserAgent, electronFetch, sessionCookieStore, trackerSession } from './net'
 import { openSiteWindow } from './site-window'
-import { DefinitionsUpdater } from './definitions-updater'
-import type { DefinitionsStatus } from '../shared/api'
-import { resolveLanguage, translator } from '../shared/i18n'
+import { JsonStore } from './store'
+import { TorrentManager, type TorrentStoreShape } from './torrents'
+import { AppTray } from './tray'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const log = (msg: string) => console.log(`[torseek] ${msg}`)
 
 interface StoreShape extends IndexerStoreShape, TorrentStoreShape {
   settings: AppSettings
+  /** One-time hints already shown */
+  seen?: { trayHint?: boolean }
 }
 
 // Separate profile for tests/automation so they don't touch the real one
@@ -30,29 +33,47 @@ let mainWindow: BrowserWindow | null = null
 let store: JsonStore<StoreShape>
 let indexers: IndexerManager
 let torrents: TorrentManager
-let updater: DefinitionsUpdater
+let definitions: DefinitionsUpdater
+let appUpdater: AppUpdater
+let tray: AppTray | null = null
+let quitting = false
 const defStatus: DefinitionsStatus = { checkedAt: 0, updating: false }
 const searches = new Map<string, AbortController>()
 
 const settings = () => store.get().settings
+const i18n = () => translator(resolveLanguage(settings().language, [app.getLocale(), ...app.getPreferredSystemLanguages()]))
 
-const bundledDefinitions = () => (app.isPackaged ? join(process.resourcesPath, 'definitions') : join(app.getAppPath(), 'definitions'))
+const resource = (...p: string[]) => (app.isPackaged ? join(process.resourcesPath, ...p) : join(app.getAppPath(), ...p))
+const bundledDefinitions = () => resource('definitions')
 const userDefinitions = () => join(app.getPath('userData'), 'definitions')
+const iconPath = () => (app.isPackaged ? resource('icon.png') : resource('build', 'icon.png'))
 
 function definitionDirs(): string[] {
   // User folder wins, so updated or hand-fixed definitions can be dropped in without a rebuild
   return [bundledDefinitions(), userDefinitions()]
 }
 
+function sendToUi(channel: string, payload?: unknown) {
+  if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(channel, payload)
+}
+
+function showWindow(page?: NavigateTarget) {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  mainWindow!.show()
+  if (mainWindow!.isMinimized()) mainWindow!.restore()
+  mainWindow!.focus()
+  if (page) sendToUi(IPC.navigate, page)
+}
+
 async function updateDefinitions(): Promise<DefinitionsStatus> {
   if (defStatus.updating) return defStatus
   defStatus.updating = true
   try {
-    const r = await updater.update()
+    const r = await definitions.update()
     Object.assign(defStatus, { checkedAt: r.checkedAt, lastResult: r, error: undefined })
     if (r.updated || r.added || r.removed) {
       await indexers.load()
-      if (mainWindow && !mainWindow.isDestroyed()) mainWindow.webContents.send(IPC.indexersChanged)
+      sendToUi(IPC.indexersChanged)
     }
     log(`definitions: ${r.updated} updated, ${r.added} added, ${r.removed} removed`)
   } catch (e) {
@@ -69,9 +90,40 @@ function safeExternal(url: string) {
   return shell.openExternal(url)
 }
 
+// --- OS integration -------------------------------------------------------------------
+
+// In dev the protocol handler must point at electron.exe + the app path
+const protocolArgs = (): [string, string, string[]] | [string] =>
+  process.defaultApp ? ['magnet', process.execPath, [app.getAppPath()]] : ['magnet']
+
+function applyLoginItem() {
+  if (process.platform === 'linux') return
+  app.setLoginItemSettings({ openAtLogin: settings().openAtLogin, args: ['--hidden'] })
+}
+
+function refreshTray() {
+  if (!tray) return
+  const { t, tn } = i18n()
+  const active = torrents.activeCount()
+  tray.update({
+    open: t('tray.open'),
+    pauseAll: t('tray.pauseAll'),
+    resumeAll: t('tray.resumeAll'),
+    quit: t('tray.quit'),
+    tooltip: active ? `Torseek — ${tn('tray.active', active)}` : 'Torseek',
+  })
+}
+
+function notifyComplete(name: string) {
+  if (!settings().notifyOnComplete || !Notification.isSupported()) return
+  const n = new Notification({ title: i18n().t('notify.done'), body: name, icon: iconPath() })
+  n.on('click', () => showWindow('downloads'))
+  n.show()
+}
+
 // --- API implementation (invoked from the renderer via window.api) ----------------
 
-function createApi(sender: () => WebContents): Omit<Api, 'onSearchEvent' | 'onTorrents' | 'onIndexersChanged'> {
+function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
   const send = (e: SearchEvent) => {
     const wc = sender()
     if (!wc.isDestroyed()) wc.send(IPC.searchEvent, e)
@@ -133,7 +185,9 @@ function createApi(sender: () => WebContents): Omit<Api, 'onSearchEvent' | 'onTo
 
     async download(release) {
       const target = await resolveRelease(release)
-      return torrents.add(target, settings().downloadDir, { indexerName: release.indexerName, details: release.details })
+      const res = await torrents.add(target, settings().downloadDir, { indexerName: release.indexerName, details: release.details })
+      refreshTray()
+      return res
     },
     async getMagnet(release) {
       if (release.magnet) return release.magnet
@@ -152,19 +206,28 @@ function createApi(sender: () => WebContents): Omit<Api, 'onSearchEvent' | 'onTo
     },
     async pauseTorrent(infoHash) {
       await torrents.pause(infoHash)
+      refreshTray()
     },
     async resumeTorrent(infoHash) {
       await torrents.resume(infoHash)
+      refreshTray()
     },
     async removeTorrent(infoHash, deleteFiles) {
       await torrents.remove(infoHash, deleteFiles)
+      refreshTray()
     },
     async openTorrentFolder(infoHash) {
       shell.showItemInFolder(torrents.contentPath(infoHash))
     },
-    async openTorrentFile(infoHash, path) {
-      const err = await shell.openPath(join(torrents.snapshot().find((t) => t.infoHash === infoHash)!.path, path))
+    async openTorrentFile(infoHash, index) {
+      const err = await shell.openPath(torrents.filePath(infoHash, index))
       if (err) throw new Error(err)
+    },
+    async setFileSelection(infoHash, selected) {
+      await torrents.setFileSelection(infoHash, selected)
+    },
+    async streamUrl(infoHash, index) {
+      return torrents.streamUrl(infoHash, index)
     },
 
     async getSettings() {
@@ -173,6 +236,8 @@ function createApi(sender: () => WebContents): Omit<Api, 'onSearchEvent' | 'onTo
     async updateSettings(patch) {
       store.update((d) => Object.assign(d.settings, patch))
       torrents.setLimits(settings().downloadLimit, settings().uploadLimit)
+      if ('openAtLogin' in patch) applyLoginItem()
+      if ('language' in patch) refreshTray()
       return settings()
     },
     async chooseDownloadDir() {
@@ -191,6 +256,27 @@ function createApi(sender: () => WebContents): Omit<Api, 'onSearchEvent' | 'onTo
       return defStatus
     },
     updateDefinitions,
+
+    async getMagnetHandler() {
+      return app.isDefaultProtocolClient(...(protocolArgs() as [string]))
+    },
+    async setMagnetHandler(on) {
+      const args = protocolArgs() as [string]
+      if (on) app.setAsDefaultProtocolClient(...args)
+      else app.removeAsDefaultProtocolClient(...args)
+      return app.isDefaultProtocolClient(...args)
+    },
+
+    async updateStatus() {
+      return appUpdater.status
+    },
+    async checkForUpdates() {
+      return appUpdater.check()
+    },
+    async installUpdate() {
+      quitting = true
+      appUpdater.install()
+    },
   }
 }
 
@@ -205,13 +291,14 @@ function registerIpc() {
 
 // --- window ---------------------------------------------------------------------------
 
-function createWindow() {
+function createWindow(show = true) {
   mainWindow = new BrowserWindow({
     width: 1320,
     height: 860,
     minWidth: 900,
     minHeight: 600,
     show: false,
+    icon: iconPath(),
     backgroundColor: '#0b0d12',
     titleBarStyle: 'hidden',
     titleBarOverlay: { color: '#00000000', symbolColor: '#a1a7b3', height: 44 },
@@ -222,13 +309,23 @@ function createWindow() {
       nodeIntegration: false,
     },
   })
-  mainWindow.once('ready-to-show', () => mainWindow?.show())
+  if (show) mainWindow.once('ready-to-show', () => mainWindow?.show())
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
     void safeExternal(url).catch(() => {})
     return { action: 'deny' }
   })
   mainWindow.webContents.on('will-navigate', (e, url) => {
     if (!url.startsWith(process.env.ELECTRON_RENDERER_URL ?? 'file://')) e.preventDefault()
+  })
+  // Close = hide to tray while downloads keep running
+  mainWindow.on('close', (e) => {
+    if (quitting || !settings().closeToTray || !tray) return
+    e.preventDefault()
+    mainWindow?.hide()
+    if (!store.get().seen?.trayHint && Notification.isSupported()) {
+      store.update((d) => (d.seen = { ...d.seen, trayHint: true }))
+      new Notification({ title: 'Torseek', body: i18n().t('notify.tray'), icon: iconPath() }).show()
+    }
   })
 
   if (process.env.ELECTRON_RENDERER_URL) void mainWindow.loadURL(process.env.ELECTRON_RENDERER_URL)
@@ -237,31 +334,45 @@ function createWindow() {
 
 function handleMagnetArgs(argv: string[]) {
   const magnet = argv.find((a) => a.startsWith('magnet:'))
-  if (magnet) void torrents.addMagnet(magnet, settings().downloadDir).catch((e) => log(`magnet: ${e.message}`))
+  if (!magnet) return
+  void torrents
+    .addMagnet(magnet, settings().downloadDir)
+    .then(() => {
+      refreshTray()
+      showWindow('downloads')
+    })
+    .catch((e) => log(`magnet: ${e.message}`))
 }
 
 app.on('second-instance', (_e, argv) => {
   handleMagnetArgs(argv)
-  if (mainWindow) {
-    if (mainWindow.isMinimized()) mainWindow.restore()
-    mainWindow.focus()
-  }
+  showWindow()
+})
+
+// macOS hands protocol links over this event
+app.on('open-url', (e, url) => {
+  e.preventDefault()
+  if (torrents) handleMagnetArgs([url])
 })
 
 app.whenReady().then(async () => {
-  store = new JsonStore<StoreShape>(join(app.getPath('userData'), 'torseek.json'), {
-    settings: {
-      language: (process.env.TORSEEK_LANG as AppSettings['language'] | undefined) ?? 'auto',
-      downloadDir: join(app.getPath('downloads'), 'Torseek'),
-      searchConcurrency: 12,
-      searchTimeoutSec: 25,
-      seedAfterDownload: true,
-      showAdult: false,
-      downloadLimit: 0,
-      uploadLimit: 0,
-    },
-    indexers: {},
-    torrents: [],
+  const defaultSettings: AppSettings = {
+    language: (process.env.TORSEEK_LANG as AppSettings['language'] | undefined) ?? 'auto',
+    downloadDir: join(app.getPath('downloads'), 'Torseek'),
+    searchConcurrency: 12,
+    searchTimeoutSec: 25,
+    seedAfterDownload: true,
+    showAdult: false,
+    downloadLimit: 0,
+    uploadLimit: 0,
+    closeToTray: true,
+    notifyOnComplete: true,
+    openAtLogin: false,
+  }
+  store = new JsonStore<StoreShape>(join(app.getPath('userData'), 'torseek.json'), { settings: defaultSettings, indexers: {}, torrents: [] })
+  // Settings added in later versions get their defaults in older profiles
+  store.update((d) => {
+    d.settings = { ...defaultSettings, ...d.settings }
   })
 
   // All tracker traffic shares one Chromium session with the sign-in / challenge windows
@@ -272,39 +383,76 @@ app.whenReady().then(async () => {
     seal: (s: string) => (safeStorage.isEncryptionAvailable() ? 'enc:' + safeStorage.encryptString(s).toString('base64') : s),
     open: (s: string) => (s.startsWith('enc:') ? safeStorage.decryptString(Buffer.from(s.slice(4), 'base64')) : s),
   }
-  const windowText: WindowText = (key, name) => {
-    const lang = resolveLanguage(settings().language, [app.getLocale(), ...app.getPreferredSystemLanguages()])
-    return translator(lang).t(`win.${key}`, { name })
-  }
+  const windowText: WindowText = (key, name) => i18n().t(`win.${key}`, { name })
   indexers = new IndexerManager(definitionDirs(), http, store, (o) => openSiteWindow({ ...o, parent: mainWindow }), log, secrets, windowText)
   await indexers.load()
 
-  torrents = new TorrentManager(store, join(app.getPath('userData'), 'torrents'), { seedAfterDownload: () => settings().seedAfterDownload }, log)
+  torrents = new TorrentManager(
+    store,
+    join(app.getPath('userData'), 'torrents'),
+    {
+      seedAfterDownload: () => settings().seedAfterDownload,
+      onComplete: (rec) => {
+        notifyComplete(rec.name)
+        refreshTray()
+      },
+    },
+    log,
+  )
   torrents.setLimits(settings().downloadLimit, settings().uploadLimit)
   await torrents.init()
 
-  updater = new DefinitionsUpdater(bundledDefinitions(), userDefinitions())
-  defStatus.checkedAt = await updater.lastChecked()
+  definitions = new DefinitionsUpdater(bundledDefinitions(), userDefinitions())
+  defStatus.checkedAt = await definitions.lastChecked()
+  const automation = !!process.env.TORSEEK_NO_UPDATE
   // Refresh definitions in the background at most once a day
-  if (Date.now() - defStatus.checkedAt > 24 * 3600_000 && !process.env.TORSEEK_NO_UPDATE) setTimeout(() => void updateDefinitions(), 5000)
+  if (Date.now() - defStatus.checkedAt > 24 * 3600_000 && !automation) setTimeout(() => void updateDefinitions(), 5000)
+
+  appUpdater = new AppUpdater((s) => sendToUi(IPC.updateStatus, s))
+  if (appUpdater.supported && !automation) setTimeout(() => void appUpdater.check(), 15_000)
 
   registerIpc()
-  createWindow()
+  try {
+    tray = new AppTray(iconPath(), {
+      open: () => showWindow(),
+      pauseAll: () => void torrents.pauseAll().then(refreshTray),
+      resumeAll: () => void torrents.resumeAll().then(refreshTray),
+      quit: () => app.quit(),
+    })
+    refreshTray()
+  } catch (e) {
+    log(`tray unavailable: ${(e as Error).message}`)
+  }
+  applyLoginItem()
+
+  // Launched at login: start in the tray
+  createWindow(!process.argv.includes('--hidden'))
   handleMagnetArgs(process.argv)
 
+  let lastActive = -1
   setInterval(() => {
-    if (!mainWindow || mainWindow.isDestroyed()) return
-    mainWindow.webContents.send(IPC.torrents, torrents.snapshot())
+    sendToUi(IPC.torrents, torrents.snapshot())
+    const active = torrents.activeCount()
+    if (active !== lastActive) {
+      lastActive = active
+      refreshTray()
+    }
   }, 1000)
 })
 
-app.on('window-all-closed', () => app.quit())
+// With the tray the app keeps running until "Quit"
+app.on('window-all-closed', () => {
+  if (!tray) app.quit()
+})
 
-let quitting = false
+// Flush state and stop the torrent client cleanly, then really quit
+let stopping = false
 app.on('before-quit', (e) => {
-  if (quitting || !torrents) return
-  e.preventDefault()
   quitting = true
+  if (!torrents || stopping) return
+  e.preventDefault()
+  stopping = true
   store.flush()
+  tray?.destroy()
   void torrents.destroy().finally(() => app.quit())
 })

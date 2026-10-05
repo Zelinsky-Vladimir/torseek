@@ -1,0 +1,52 @@
+import { app } from 'electron'
+import updaterPkg from 'electron-updater'
+import type { UpdateStatus } from '../shared/api'
+
+// Self-update from GitHub Releases (electron-updater reads latest*.yml that the release
+// workflow attaches). Downloads in the background, installs on the next restart.
+// Unsigned macOS builds can't self-update; Windows NSIS and Linux AppImage can.
+
+const { autoUpdater } = updaterPkg
+
+export class AppUpdater {
+  status: UpdateStatus = { state: 'idle', version: app.getVersion() }
+
+  constructor(private readonly onChange: (s: UpdateStatus) => void) {
+    autoUpdater.autoDownload = true
+    autoUpdater.autoInstallOnAppQuit = true
+    autoUpdater.logger = null
+    autoUpdater.on('checking-for-update', () => this.set({ state: 'checking' }))
+    autoUpdater.on('update-not-available', () => this.set({ state: 'latest' }))
+    autoUpdater.on('update-available', (info) => this.set({ state: 'downloading', available: info.version, percent: 0 }))
+    autoUpdater.on('download-progress', (p) => this.set({ state: 'downloading', percent: Math.round(p.percent) }))
+    autoUpdater.on('update-downloaded', (info) => this.set({ state: 'ready', available: info.version }))
+    autoUpdater.on('error', (e) => this.set({ state: 'error', error: e?.message ?? String(e) }))
+  }
+
+  get supported() {
+    return app.isPackaged && process.platform !== 'darwin'
+  }
+
+  private set(patch: Partial<UpdateStatus>) {
+    this.status = { ...this.status, ...patch }
+    if (patch.state !== 'error') delete this.status.error
+    this.onChange(this.status)
+  }
+
+  async check(): Promise<UpdateStatus> {
+    if (!this.supported) {
+      this.set({ state: 'unsupported' })
+      return this.status
+    }
+    try {
+      await autoUpdater.checkForUpdates()
+    } catch (e) {
+      this.set({ state: 'error', error: (e as Error).message })
+    }
+    return this.status
+  }
+
+  install() {
+    if (this.status.state === 'ready') autoUpdater.quitAndInstall()
+  }
+}

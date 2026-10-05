@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { FolderOpen, RefreshCw } from 'lucide-react'
+import { Download, FolderOpen, RefreshCw } from 'lucide-react'
 import type { AppSettings, DefinitionsStatus } from '../../../shared/api'
 import { api } from '../api'
 import { LANGUAGES, t } from '../i18n'
@@ -33,6 +33,16 @@ export function SettingsPage() {
                 ))}
               </select>
             </Row>
+            <Row label={t('set.closeToTray')} hint={t('set.closeToTrayHint')}>
+              <Toggle checked={settings.closeToTray} onChange={(v) => save({ closeToTray: v })} />
+            </Row>
+            <Row label={t('set.notify')} hint={t('set.notifyHint')}>
+              <Toggle checked={settings.notifyOnComplete} onChange={(v) => save({ notifyOnComplete: v })} />
+            </Row>
+            <Row label={t('set.autostart')} hint={t('set.autostartHint')}>
+              <Toggle checked={settings.openAtLogin} onChange={(v) => save({ openAtLogin: v })} />
+            </Row>
+            <MagnetRow />
           </Section>
 
           <Section title={t('set.section.downloads')}>
@@ -78,11 +88,60 @@ export function SettingsPage() {
           </Section>
 
           <Section title={t('set.section.about')}>
+            <UpdatesRow />
             <p className="px-4 py-3.5 text-[13px] leading-relaxed text-muted">{t('set.about')}</p>
           </Section>
         </div>
       </div>
     </div>
+  )
+}
+
+function MagnetRow() {
+  const [on, setOn] = useState<boolean | null>(null)
+  useEffect(() => void api.getMagnetHandler().then(setOn), [])
+  return (
+    <Row label={t('set.magnet')} hint={t('set.magnetHint')}>
+      <Toggle checked={!!on} disabled={on === null} onChange={async (v) => setOn(await api.setMagnetHandler(v))} />
+    </Row>
+  )
+}
+
+function UpdatesRow() {
+  const { update, toast } = useStore()
+  const [busy, setBusy] = useState(false)
+  const version = update?.version ?? ''
+  let hint = t('set.updatesHint', { version })
+  if (update?.state === 'downloading') hint = t('upd.downloading', { version: update.available ?? '' }) + (update.percent ? ` ${update.percent}%` : '')
+  if (update?.state === 'ready') hint = t('upd.ready', { version: update.available ?? '' })
+  if (update?.state === 'unsupported') hint = t('upd.devBuild')
+  return (
+    <Row label={t('set.updates')} hint={hint}>
+      {update?.state === 'ready' ? (
+        <Button variant="primary" icon={<Download className="size-4" />} onClick={() => void api.installUpdate()}>
+          {t('upd.restart')}
+        </Button>
+      ) : (
+        <Button
+          icon={<RefreshCw className="size-4" />}
+          loading={busy || update?.state === 'checking' || update?.state === 'downloading'}
+          onClick={async () => {
+            setBusy(true)
+            try {
+              const s = await api.checkForUpdates()
+              useStore.setState({ update: s })
+              if (s.state === 'latest') toast({ kind: 'success', text: t('upd.latest') })
+              if (s.state === 'error') toast({ kind: 'error', text: t('upd.failed', { error: s.error ?? '' }) })
+              if (s.state === 'unsupported') toast({ kind: 'info', text: t('upd.devBuild') })
+            } finally {
+              setBusy(false)
+            }
+          }}
+        >
+          {t('set.checkNow')}
+        </Button>
+      )}
+    </Row>
   )
 }
 

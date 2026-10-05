@@ -34,7 +34,7 @@ function createMockApi(): Api {
   }))
   indexers.push({ ...indexers[0], id: 'privatetracker', name: 'SomePrivate', type: 'private', enabled: false, loginMethod: 'form', signedIn: false, settings: [{ name: 'username', type: 'text', label: 'Username' }, { name: 'password', type: 'password', label: 'Password' }], health: undefined })
 
-  let settings: AppSettings = { language: 'auto', downloadDir: 'C:\\Users\\me\\Downloads\\Torseek', searchConcurrency: 12, searchTimeoutSec: 25, seedAfterDownload: true, showAdult: false, downloadLimit: 0, uploadLimit: 0 }
+  let settings: AppSettings = { closeToTray: true, notifyOnComplete: true, openAtLogin: false, language: 'auto', downloadDir: 'C:\\Users\\me\\Downloads\\Torseek', searchConcurrency: 12, searchTimeoutSec: 25, seedAfterDownload: true, showAdult: false, downloadLimit: 0, uploadLimit: 0 }
   const torrents: TorrentInfo[] = [
     { infoHash: 'a'.repeat(40), name: 'Dune.Part.Two.2024.2160p.WEB-DL.DV.HDR.H.265-FLUX', state: 'downloading', progress: 0.42, length: 18e9, downloaded: 7.5e9, uploaded: 1.2e9, downloadSpeed: 8.4e6, uploadSpeed: 4.1e5, numPeers: 63, timeRemaining: 1_250_000, path: settings.downloadDir, addedAt: Date.now() - 3e6, source: { indexerName: 'TheRARBG' } },
     { infoHash: 'b'.repeat(40), name: 'ubuntu-26.04.1-desktop-amd64.iso', state: 'seeding', progress: 1, length: 6.4e9, downloaded: 6.4e9, uploaded: 9.1e9, downloadSpeed: 0, uploadSpeed: 1.3e6, numPeers: 12, timeRemaining: 0, path: settings.downloadDir, addedAt: Date.now() - 9e7 },
@@ -157,7 +157,34 @@ function createMockApi(): Api {
       return structuredClone(torrents)
     },
     async torrentFiles() {
-      return [{ name: 'movie.mkv', path: 'Dune/movie.mkv', length: 18e9, progress: 0.42 }]
+      return [
+        { index: 0, name: 'Dune.Part.Two.2160p.mkv', path: 'Dune/Dune.Part.Two.2160p.mkv', length: 17.6e9, downloaded: 7.4e9, progress: 0.42, selected: true, playable: true },
+        { index: 1, name: 'Dune.Part.Two.rus.srt', path: 'Dune/Subs/Dune.Part.Two.rus.srt', length: 9e4, downloaded: 9e4, progress: 1, selected: true, playable: false },
+        { index: 2, name: 'Sample.mkv', path: 'Dune/Sample.mkv', length: 4e8, downloaded: 0, progress: 0, selected: false, playable: true },
+      ]
+    },
+    async setFileSelection() {},
+    async streamUrl() {
+      return 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
+    },
+    async getMagnetHandler() {
+      return false
+    },
+    async setMagnetHandler(on: boolean) {
+      return on
+    },
+    async updateStatus() {
+      return { state: 'idle', version: '0.2.0' }
+    },
+    async checkForUpdates() {
+      return { state: 'unsupported', version: '0.2.0' }
+    },
+    async installUpdate() {},
+    onUpdateStatus() {
+      return () => {}
+    },
+    onNavigate() {
+      return () => {}
     },
     onTorrents(cb: (t: TorrentInfo[]) => void) {
       torrentListeners.add(cb)
