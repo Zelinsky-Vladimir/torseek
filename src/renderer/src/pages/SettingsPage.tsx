@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { Download, FolderOpen, RefreshCw } from 'lucide-react'
-import type { AppSettings, DefinitionsStatus } from '../../../shared/api'
+import { Copy, Download, FolderOpen, KeyRound, RefreshCw } from 'lucide-react'
+import type { AppSettings, DefinitionsStatus, TorznabStatus } from '../../../shared/api'
 import { api } from '../api'
 import { LANGUAGES, t } from '../i18n'
 import { errorText, useStore } from '../store'
@@ -89,6 +89,8 @@ export function SettingsPage() {
             </Row>
           </Section>
 
+          <TorznabSection settings={settings} save={save} />
+
           <Section title={t('set.section.trackers')}>
             <DefinitionsRow />
           </Section>
@@ -100,6 +102,64 @@ export function SettingsPage() {
         </div>
       </div>
     </div>
+  )
+}
+
+function TorznabSection({ settings, save }: { settings: AppSettings; save: (p: Partial<AppSettings>) => void }) {
+  const toast = useStore((s) => s.toast)
+  const [status, setStatus] = useState<TorznabStatus | null>(null)
+  useEffect(() => {
+    const t = setTimeout(() => void api.torznabStatus().then(setStatus), 300)
+    return () => clearTimeout(t)
+  }, [settings.torznabEnabled, settings.torznabPort, settings.torznabApiKey])
+  const url = `http://127.0.0.1:${settings.torznabPort}/api/v2.0/indexers/all/results/torznab/`
+  const copy = async (text: string) => {
+    await navigator.clipboard.writeText(text)
+    toast({ kind: 'info', text: t('set.copied') })
+  }
+  const hint = !settings.torznabEnabled
+    ? t('set.torznabHint')
+    : status?.error
+      ? t('set.torznabFailed', { error: status.error })
+      : status?.running
+        ? t('set.torznabRunning', { port: status.port ?? settings.torznabPort })
+        : t('set.torznabHint')
+  return (
+    <Section title={t('set.section.torznab')}>
+      <Row label={t('set.torznab')} hint={hint}>
+        <Toggle checked={settings.torznabEnabled} onChange={(v) => save({ torznabEnabled: v })} />
+      </Row>
+      {settings.torznabEnabled && (
+        <>
+          <Row label={t('set.torznabPort')}>
+            <NumberInput value={settings.torznabPort} min={1024} max={65535} onCommit={(v) => save({ torznabPort: v })} />
+          </Row>
+          <Row label={t('set.torznabUrl')} hint={t('set.torznabUrlHint')}>
+            <div className="flex gap-2">
+              <Input readOnly value={url} className="w-72 font-mono text-[12px]" />
+              <Button icon={<Copy className="size-4" />} onClick={() => void copy(url)}>
+                {t('set.copy')}
+              </Button>
+            </div>
+          </Row>
+          <Row label={t('set.torznabKey')}>
+            <div className="flex gap-2">
+              <Input readOnly value={settings.torznabApiKey} className="w-72 font-mono text-[12px]" />
+              <Button icon={<Copy className="size-4" />} onClick={() => void copy(settings.torznabApiKey)}>
+                {t('set.copy')}
+              </Button>
+              <Button
+                variant="ghost"
+                icon={<KeyRound className="size-4" />}
+                onClick={async () => useStore.setState({ settings: await api.regenerateTorznabKey() })}
+              >
+                {t('set.regenerate')}
+              </Button>
+            </div>
+          </Row>
+        </>
+      )}
+    </Section>
   )
 }
 

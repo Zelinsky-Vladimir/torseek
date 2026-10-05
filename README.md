@@ -19,6 +19,8 @@ runs Jackett's community-maintained YAML tracker definitions unchanged.
 ```
 definitions/            Cardigann YAMLs from Jackett (all 584)
 src/core/
+  torznab.ts            Torznab API server (Sonarr / Radarr)
+  filters.ts            result filters shared by the UI and watched searches
   cardigann/            the engine: template, filters, dates, .NET regex compat, indexer
   categories.ts         Torznab category tree + per-tracker mapping
   search.ts             fan-out with concurrency, per-tracker timeout, streaming callbacks
@@ -48,6 +50,9 @@ npm run dist                  # Windows installer into dist/
 node scripts/e2e-trackers.mjs dune --open 1337x   # all public trackers + open a protected site
 npm run sync-definitions      # pull latest definitions from Jackett on GitHub
 node scripts/e2e-smoke.mjs "ubuntu 26.04"    # drive the built app: search -> download
+node scripts/e2e-client.mjs     # file selection, streaming, player, tray (legal test torrent)
+node scripts/e2e-library.mjs    # title card, favorites, watch, history
+node scripts/e2e-torznab.mjs    # Torznab API the way Sonarr calls it
 ```
 
 ## Languages
@@ -67,29 +72,33 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
   `git tag v0.2.0 && git push origin v0.2.0`. All three installers are built and attached to a GitHub Release.
   Builds are unsigned for now (SmartScreen / Gatekeeper will warn).
 
-## Status (v0.2)
+## Features
 
-Works:
-- all **584 Jackett definitions** (public, semi-private, private) + hand-written **RuTracker** and **Toloka**
-- **accounts**: Jackett-compatible login (form / post / get / cookie / oneurl), automatic re-login when a session
-  expires, or **sign in in the browser** - a real browser window onto the site (captcha, 2FA, anything); the
-  session is shared with the search engine. Credentials are encrypted at rest (Electron safeStorage)
-- **Cloudflare / DDoS-Guard**: all tracker traffic runs on Chromium's network stack in one persistent session;
-  for a protected site the user opens it once in the app's window, passes the check, and searches reuse it
-- HTML / JSON / XML responses, Go-template subset, all Jackett filters, rows `after` / `dateheaders`
-- download resolution: direct `.torrent`, magnet, `download.selectors`, `infohash`, `before` blocks
-- results streaming, dedupe by info hash, quality badges, category / quality / seed filters
-- built-in client: add, pause/resume, remove (+files), resume after restart, speed limits, seeding toggle
-- **definitions auto-update** from the Jackett repo (daily, or Settings -> Update now); only changed files are fetched
-- **installer**: `npm run dist` -> `dist/Torseek Setup x.y.z.exe` (NSIS); dmg / AppImage targets configured
+**Search**
+- all **584 Jackett definitions** (public, semi-private, private) plus hand-written **RuTracker, Toloka, Knaben,
+  Torrents.csv, SubsPlease, Anilibria, AudioBook Bay**
+- streaming results, duplicates merged across trackers, quality badges, category / quality / seed filters
+- **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
+- **favorites**, **search history**, **watched searches**: re-checked in the background, notification on new releases
+- RuTracker / Toloka fetch several result pages
 
-Live check from this machine (all 86 public trackers enabled, query "dune"): 54 returned results, 16 answered
-with nothing, 19 behind Cloudflare, 6 down or with broken TLS.
+**Accounts & protection**
+- Jackett-compatible login (form / post / get / cookie / oneurl) with automatic re-login, or **sign in in the browser**
+  (captcha, 2FA); credentials encrypted at rest (Electron safeStorage)
+- Cloudflare / DDoS-Guard: Chromium network stack in one shared session; open the site once in the app's window
 
-Not yet:
-- other C#-only Jackett indexers (AnimeBytes, BakaBT, Gazelle-based sites, ...)
-- code signing (Windows SmartScreen will warn), auto-update of the app itself
-- per-torrent file list / selective download, streaming playback, magnet: link registration (opt-in setting)
+**Client**
+- choose files in a torrent, **play video/audio while it downloads**, open finished files
+- tray icon, keeps downloading when the window is closed, notifications, start with the OS, magnet link handler
+- speed limits, seeding toggle, resume after restart
+
+**Integration & updates**
+- **Torznab API** for Sonarr / Radarr / Lidarr / Prowlarr (Jackett-compatible URLs, local only, API key)
+- tracker definitions auto-update daily from the Jackett repo; the app self-updates from GitHub Releases (Windows/Linux)
+- UI in 13 languages
+
+Not yet: other C#-only Jackett indexers (AnimeBytes, Gazelle-based sites, Spanish sites), code signing,
+macOS self-update (needs signing), right-to-left languages.
 
 ## License
 

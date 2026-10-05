@@ -285,4 +285,18 @@ export const ja: Dict = {
   "set.titleInfoHint": "結果の上にポスター・年・評価を表示します。検索語は Stremio の公開カタログ Cinemeta に送信されます。",
   "set.watchInterval": "ウォッチの確認間隔",
   "set.watchIntervalHint": "ウォッチ中の検索をバックグラウンドで再確認する間隔（時間）。",
+
+  // settings: Torznab API
+  "set.section.torznab": "Sonarr / Radarr（Torznab API）",
+  "set.torznab": "Torznab API を有効にする",
+  "set.torznabHint": "Sonarr・Radarr・Lidarr・Prowlarr から Jackett と同じように Torseek で検索できます。このコンピューターからのみアクセスできます。",
+  "set.torznabPort": "ポート",
+  "set.torznabKey": "API キー",
+  "set.torznabUrl": "Torznab URL",
+  "set.torznabUrlHint": "Sonarr / Radarr でこの URL と API キーを使って Torznab インデクサーを追加します。「all」は有効なすべてのトラッカーを検索し、トラッカー ID にすればそのトラッカーのみを検索します。",
+  "set.copy": "コピー",
+  "set.copied": "コピーしました",
+  "set.regenerate": "新しいキー",
+  "set.torznabRunning": "ポート {port} で動作中",
+  "set.torznabFailed": "起動できませんでした: {error}",
 }

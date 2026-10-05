@@ -34,7 +34,7 @@ function createMockApi(): Api {
   }))
   indexers.push({ ...indexers[0], id: 'privatetracker', name: 'SomePrivate', type: 'private', enabled: false, loginMethod: 'form', signedIn: false, settings: [{ name: 'username', type: 'text', label: 'Username' }, { name: 'password', type: 'password', label: 'Password' }], health: undefined })
 
-  let settings: AppSettings = { showTitleInfo: true, watchIntervalHours: 6, closeToTray: true, notifyOnComplete: true, openAtLogin: false, language: 'auto', downloadDir: 'C:\\Users\\me\\Downloads\\Torseek', searchConcurrency: 12, searchTimeoutSec: 25, seedAfterDownload: true, showAdult: false, downloadLimit: 0, uploadLimit: 0 }
+  let settings: AppSettings = { torznabEnabled: false, torznabPort: 9118, torznabApiKey: '0123456789abcdef0123456789abcdef', showTitleInfo: true, watchIntervalHours: 6, closeToTray: true, notifyOnComplete: true, openAtLogin: false, language: 'auto', downloadDir: 'C:\\Users\\me\\Downloads\\Torseek', searchConcurrency: 12, searchTimeoutSec: 25, seedAfterDownload: true, showAdult: false, downloadLimit: 0, uploadLimit: 0 }
   const torrents: TorrentInfo[] = [
     { infoHash: 'a'.repeat(40), name: 'Dune.Part.Two.2024.2160p.WEB-DL.DV.HDR.H.265-FLUX', state: 'downloading', progress: 0.42, length: 18e9, downloaded: 7.5e9, uploaded: 1.2e9, downloadSpeed: 8.4e6, uploadSpeed: 4.1e5, numPeers: 63, timeRemaining: 1_250_000, path: settings.downloadDir, addedAt: Date.now() - 3e6, source: { indexerName: 'TheRARBG' } },
     { infoHash: 'b'.repeat(40), name: 'ubuntu-26.04.1-desktop-amd64.iso', state: 'seeding', progress: 1, length: 6.4e9, downloaded: 6.4e9, uploaded: 9.1e9, downloadSpeed: 0, uploadSpeed: 1.3e6, numPeers: 12, timeRemaining: 0, path: settings.downloadDir, addedAt: Date.now() - 9e7 },
@@ -216,6 +216,12 @@ function createMockApi(): Api {
     async markWatchSeen() {},
     async lookupTitle() {
       return null
+    },
+    async torznabStatus() {
+      return { running: settings.torznabEnabled, port: settings.torznabPort }
+    },
+    async regenerateTorznabKey() {
+      return settings
     },
     onLibraryChanged() {
       return () => {}

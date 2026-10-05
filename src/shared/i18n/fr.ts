@@ -285,4 +285,18 @@ export const fr: Dict = {
   "set.titleInfoHint": "Affiche, année et note au-dessus des résultats. La recherche est envoyée à Cinemeta, un catalogue public géré par Stremio.",
   "set.watchInterval": "Intervalle de vérification",
   "set.watchIntervalHint": "Heures entre deux vérifications en arrière-plan des recherches suivies.",
+
+  // settings: Torznab API
+  "set.section.torznab": "Sonarr / Radarr (API Torznab)",
+  "set.torznab": "Activer l’API Torznab",
+  "set.torznabHint": "Permet à Sonarr, Radarr, Lidarr ou Prowlarr de chercher via Torseek, comme avec Jackett. Accessible uniquement depuis cet ordinateur.",
+  "set.torznabPort": "Port",
+  "set.torznabKey": "Clé API",
+  "set.torznabUrl": "URL Torznab",
+  "set.torznabUrlHint": "Dans Sonarr / Radarr, ajoutez un indexeur Torznab avec cette URL et la clé API. « all » cherche dans tous les trackers activés ; mettez l’id d’un tracker pour un seul.",
+  "set.copy": "Copier",
+  "set.copied": "Copié",
+  "set.regenerate": "Nouvelle clé",
+  "set.torznabRunning": "Actif sur le port {port}",
+  "set.torznabFailed": "Démarrage impossible : {error}",
 }

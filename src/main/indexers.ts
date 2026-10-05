@@ -15,6 +15,8 @@ const DEFAULT_ENABLED = new Set([
   'opensharing', 'pandacd', 'pctorrent', 'rintornet', 'rutor', 'rutracker-ru', 'thepiratebay', 'therarbg',
   'torrent-pirat', 'torrent9', 'torrentdownload', 'torrentdownloads', 'torrentgalaxyclone', 'torrentkitty',
   'world-torrent', 'yts', 'zamundalife',
+  // hand-written public ports
+  'knaben', 'torrentscsv', 'subsplease', 'anilibria', 'audiobookbay',
 ])
 
 export interface IndexerPrefs {

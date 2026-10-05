@@ -285,4 +285,18 @@ export const tr: Dict = {
   "set.titleInfoHint": "Sonuçların üstünde afiş, yıl ve puan. Arama sorgusu Stremio'nun herkese açık kataloğu Cinemeta'ya gönderilir.",
   "set.watchInterval": "Takip denetim aralığı",
   "set.watchIntervalHint": "Takip edilen aramaların arka plan denetimleri arasındaki saat.",
+
+  // settings: Torznab API
+  "set.section.torznab": "Sonarr / Radarr (Torznab API)",
+  "set.torznab": "Torznab API'yi etkinleştir",
+  "set.torznabHint": "Sonarr, Radarr, Lidarr veya Prowlarr, Jackett'ta olduğu gibi Torseek üzerinden arama yapabilir. Yalnızca bu bilgisayardan erişilebilir.",
+  "set.torznabPort": "Port",
+  "set.torznabKey": "API anahtarı",
+  "set.torznabUrl": "Torznab URL'si",
+  "set.torznabUrlHint": "Sonarr / Radarr'da bu URL ve API anahtarıyla bir Torznab dizinleyicisi ekleyin. “all” tüm etkin tracker'larda arar; yalnızca biri için tracker kimliğini yazın.",
+  "set.copy": "Kopyala",
+  "set.copied": "Kopyalandı",
+  "set.regenerate": "Yeni anahtar",
+  "set.torznabRunning": "{port} portunda çalışıyor",
+  "set.torznabFailed": "Başlatılamadı: {error}",
 }

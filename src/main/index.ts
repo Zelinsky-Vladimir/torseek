@@ -18,6 +18,9 @@ import { Library } from './library'
 import { lookupTitle } from './titles'
 import { Watcher } from './watcher'
 import { groupKey } from '../core/release'
+import { TorznabServer } from '../core/torznab'
+import type { Release as CoreRelease } from '../core/release'
+import { randomBytes } from 'node:crypto'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const log = (msg: string) => console.log(`[torseek] ${msg}`)
@@ -42,6 +45,8 @@ let appUpdater: AppUpdater
 let tray: AppTray | null = null
 let library: Library
 let watcher: Watcher
+let torznab: TorznabServer | null = null
+let torznabError: string | undefined
 let quitting = false
 const defStatus: DefinitionsStatus = { checkedAt: 0, updating: false }
 const searches = new Map<string, AbortController>()
@@ -94,6 +99,37 @@ async function updateDefinitions(): Promise<DefinitionsStatus> {
 function safeExternal(url: string) {
   if (!/^https?:\/\//i.test(url)) throw new Error('Only http(s) links can be opened')
   return shell.openExternal(url)
+}
+
+// --- Torznab API for Sonarr / Radarr -----------------------------------------------------
+
+async function applyTorznab() {
+  await torznab?.stop()
+  torznab = null
+  torznabError = undefined
+  const s = settings()
+  if (!s.torznabEnabled) return
+  const server = new TorznabServer(
+    {
+      indexers: () => indexers.enabledIndexers().map((ix) => ({ id: ix.id, name: ix.name })),
+      search: async (query, ids, timeoutMs) => {
+        const found: CoreRelease[] = []
+        const list = indexers.enabledIndexers().filter((ix) => ids.includes(ix.id))
+        await indexers.search(query, { concurrency: s.searchConcurrency, timeoutMs, onResults: (_, r) => found.push(...r), onStatus: () => {} }, list)
+        return found
+      },
+      resolve: (r) => indexers.get(r.indexerId).resolveDownload(r),
+    },
+    { port: s.torznabPort, apiKey: s.torznabApiKey, timeoutMs: s.searchTimeoutSec * 1000, log },
+  )
+  try {
+    await server.start()
+    torznab = server
+    log(`torznab API on http://127.0.0.1:${server.port}`)
+  } catch (e) {
+    torznabError = (e as Error).message
+    log(`torznab: ${torznabError}`)
+  }
 }
 
 // --- OS integration -------------------------------------------------------------------
@@ -257,6 +293,7 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       torrents.setLimits(settings().downloadLimit, settings().uploadLimit)
       if ('openAtLogin' in patch) applyLoginItem()
       if ('language' in patch) refreshTray()
+      if ('torznabEnabled' in patch || 'torznabPort' in patch) await applyTorznab()
       return settings()
     },
     async chooseDownloadDir() {
@@ -339,6 +376,14 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     },
     async markWatchSeen(id) {
       library.markSeen(id)
+    },
+    async torznabStatus() {
+      return { running: !!torznab, port: torznab?.port, error: torznabError }
+    },
+    async regenerateTorznabKey() {
+      store.update((d) => (d.settings.torznabApiKey = randomBytes(16).toString('hex')))
+      await applyTorznab()
+      return settings()
     },
     async lookupTitle(query) {
       return settings().showTitleInfo ? lookupTitle(query) : null
@@ -436,6 +481,9 @@ app.whenReady().then(async () => {
     openAtLogin: false,
     showTitleInfo: true,
     watchIntervalHours: 6,
+    torznabEnabled: false,
+    torznabPort: 9118,
+    torznabApiKey: randomBytes(16).toString('hex'),
   }
   store = new JsonStore<StoreShape>(join(app.getPath('userData'), 'torseek.json'), { settings: defaultSettings, indexers: {}, torrents: [] })
   // Settings added in later versions get their defaults in older profiles
@@ -491,6 +539,7 @@ app.whenReady().then(async () => {
     log,
   )
   if (!automation) watcher.start()
+  await applyTorznab()
 
   appUpdater = new AppUpdater((s) => sendToUi(IPC.updateStatus, s))
   if (appUpdater.supported && !automation) setTimeout(() => void appUpdater.check(), 15_000)
@@ -539,6 +588,7 @@ app.on('before-quit', (e) => {
   store.flush()
   tray?.destroy()
   watcher?.stop()
+  void torznab?.stop()
   library?.close()
   void torrents.destroy().finally(() => app.quit())
 })

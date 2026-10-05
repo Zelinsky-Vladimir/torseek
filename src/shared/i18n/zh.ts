@@ -285,4 +285,18 @@ export const zh: Dict = {
   "set.titleInfoHint": "在结果上方显示海报、年份和评分。搜索词会发送给 Stremio 运营的公共目录 Cinemeta。",
   "set.watchInterval": "追踪检查间隔",
   "set.watchIntervalHint": "后台重新检查追踪搜索的间隔（小时）。",
+
+  // settings: Torznab API
+  "set.section.torznab": "Sonarr / Radarr（Torznab API）",
+  "set.torznab": "启用 Torznab API",
+  "set.torznabHint": "让 Sonarr、Radarr、Lidarr 或 Prowlarr 像使用 Jackett 一样通过 Torseek 搜索。仅本机可访问。",
+  "set.torznabPort": "端口",
+  "set.torznabKey": "API 密钥",
+  "set.torznabUrl": "Torznab 地址",
+  "set.torznabUrlHint": "在 Sonarr / Radarr 中用此地址和 API 密钥添加 Torznab 索引器。“all”搜索所有已启用站点；替换为站点 id 则只搜索该站点。",
+  "set.copy": "复制",
+  "set.copied": "已复制",
+  "set.regenerate": "新密钥",
+  "set.torznabRunning": "正在端口 {port} 运行",
+  "set.torznabFailed": "无法启动：{error}",
 }

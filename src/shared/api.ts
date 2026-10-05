@@ -106,6 +106,16 @@ export interface AppSettings {
   showTitleInfo: boolean
   /** Hours between background re-checks of watched searches */
   watchIntervalHours: number
+  /** Local Torznab API for Sonarr / Radarr */
+  torznabEnabled: boolean
+  torznabPort: number
+  torznabApiKey: string
+}
+
+export interface TorznabStatus {
+  running: boolean
+  port?: number
+  error?: string
 }
 
 export interface HistoryItem {
@@ -236,6 +246,8 @@ export interface Api {
   watchHits(id: number): Promise<WatchHit[]>
   markWatchSeen(id: number): Promise<void>
   lookupTitle(query: string): Promise<TitleInfo | null>
+  torznabStatus(): Promise<TorznabStatus>
+  regenerateTorznabKey(): Promise<AppSettings>
   /** Watches / favorites changed in the background */
   onLibraryChanged(cb: () => void): () => void
   openExternal(url: string): Promise<void>

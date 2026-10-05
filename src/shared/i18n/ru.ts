@@ -289,4 +289,18 @@ export const ru: Dict = {
   "set.titleInfoHint": "Постер, год и рейтинг над результатами. Поисковый запрос отправляется в Cinemeta — публичный каталог Stremio.",
   "set.watchInterval": "Интервал проверки отслеживаний",
   "set.watchIntervalHint": "Сколько часов между фоновыми проверками отслеживаемых запросов.",
+
+  // settings: Torznab API
+  "set.section.torznab": "Sonarr / Radarr (Torznab API)",
+  "set.torznab": "Включить Torznab API",
+  "set.torznabHint": "Sonarr, Radarr, Lidarr или Prowlarr смогут искать через Torseek так же, как через Jackett. Доступно только с этого компьютера.",
+  "set.torznabPort": "Порт",
+  "set.torznabKey": "API-ключ",
+  "set.torznabUrl": "Адрес Torznab",
+  "set.torznabUrlHint": "В Sonarr / Radarr добавьте индексер Torznab с этим адресом и API-ключом. «all» ищет по всем включённым трекерам; подставьте id трекера, чтобы искать только по нему.",
+  "set.copy": "Копировать",
+  "set.copied": "Скопировано",
+  "set.regenerate": "Новый ключ",
+  "set.torznabRunning": "Работает на порту {port}",
+  "set.torznabFailed": "Не удалось запустить: {error}",
 }

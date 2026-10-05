@@ -39,6 +39,7 @@ const methods: ApiMethod[] = [
   'getMagnetHandler', 'setMagnetHandler', 'updateStatus', 'checkForUpdates', 'installUpdate',
   'history', 'removeHistory', 'clearHistory', 'favorites', 'favoriteKeys', 'toggleFavorite',
   'watches', 'addWatch', 'removeWatch', 'checkWatch', 'watchHits', 'markWatchSeen', 'lookupTitle',
+  'torznabStatus', 'regenerateTorznabKey',
 ]
 
 const api = {

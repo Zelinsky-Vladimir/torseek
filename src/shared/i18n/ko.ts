@@ -285,4 +285,18 @@ export const ko: Dict = {
   "set.titleInfoHint": "결과 위에 포스터, 연도, 평점을 표시합니다. 검색어가 Stremio의 공개 카탈로그 Cinemeta로 전송됩니다.",
   "set.watchInterval": "추적 확인 간격",
   "set.watchIntervalHint": "추적 중인 검색을 백그라운드에서 다시 확인하는 간격(시간).",
+
+  // settings: Torznab API
+  "set.section.torznab": "Sonarr / Radarr (Torznab API)",
+  "set.torznab": "Torznab API 사용",
+  "set.torznabHint": "Sonarr, Radarr, Lidarr, Prowlarr가 Jackett처럼 Torseek으로 검색할 수 있습니다. 이 컴퓨터에서만 접근할 수 있습니다.",
+  "set.torznabPort": "포트",
+  "set.torznabKey": "API 키",
+  "set.torznabUrl": "Torznab URL",
+  "set.torznabUrlHint": "Sonarr / Radarr에서 이 URL과 API 키로 Torznab 인덱서를 추가하세요. “all”은 활성화된 모든 트래커를 검색하며, 트래커 ID를 넣으면 그 트래커만 검색합니다.",
+  "set.copy": "복사",
+  "set.copied": "복사됨",
+  "set.regenerate": "새 키",
+  "set.torznabRunning": "포트 {port}에서 실행 중",
+  "set.torznabFailed": "시작할 수 없음: {error}",
 }

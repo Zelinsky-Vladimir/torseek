@@ -9,6 +9,8 @@ import { fileURLToPath } from 'node:url'
 import { CardigannIndexer } from '../src/core/cardigann/indexer'
 import { loadDefinitions } from '../src/core/cardigann/loader'
 import { HttpClient } from '../src/core/http'
+import type { Indexer } from '../src/core/indexer'
+import { createNativeIndexers } from '../src/core/native'
 import { searchAll, type IndexerStatus } from '../src/core/search'
 import type { Release } from '../src/core/release'
 
@@ -26,15 +28,12 @@ const root = join(dirname(fileURLToPath(import.meta.url)), '..')
 const defs = await loadDefinitions([join(root, 'definitions')])
 const http = new HttpClient({ cookieJar: true })
 
-const indexers = defs
-  .filter((d) => !d.unsupported && (!only || only.includes(d.definition.id)))
-  .map(
-    (d) =>
-      new CardigannIndexer(d.definition, {
-        http,
-        log: debug ? (level, msg) => console.error(`[${level}] ${msg}`) : undefined,
-      }),
-  )
+const log = debug ? (level: string, msg: string) => console.error(`[${level}] ${msg}`) : undefined
+const indexers: Indexer[] = [
+  ...defs.filter((d) => !d.unsupported).map((d) => new CardigannIndexer(d.definition, { http, log })),
+  // hand-written ones need an account except the public ports
+  ...createNativeIndexers({ http, log }).filter((ix) => !ix.loginMethod),
+].filter((ix) => (only ? only.includes(ix.id) : ix.meta.type === 'public'))
 
 const results = new Map<string, Release[]>()
 const statuses = new Map<string, IndexerStatus>()

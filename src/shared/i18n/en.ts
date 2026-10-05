@@ -295,6 +295,20 @@ export const en = {
   "set.titleInfoHint": "Poster, year and rating above results. The search query is sent to Cinemeta, a public catalog run by Stremio.",
   "set.watchInterval": "Watch check interval",
   "set.watchIntervalHint": "Hours between background re-checks of watched searches.",
+
+  // settings: Torznab API
+  "set.section.torznab": "Sonarr / Radarr (Torznab API)",
+  "set.torznab": "Enable Torznab API",
+  "set.torznabHint": "Lets Sonarr, Radarr, Lidarr or Prowlarr search through Torseek, the same way as with Jackett. Only reachable from this computer.",
+  "set.torznabPort": "Port",
+  "set.torznabKey": "API key",
+  "set.torznabUrl": "Torznab URL",
+  "set.torznabUrlHint": "In Sonarr / Radarr add a Torznab indexer with this URL and the API key. “all” searches every enabled tracker; put a tracker id there for just one.",
+  "set.copy": "Copy",
+  "set.copied": "Copied",
+  "set.regenerate": "New key",
+  "set.torznabRunning": "Running on port {port}",
+  "set.torznabFailed": "Couldn't start: {error}",
 }
 
 export type Key = keyof typeof en
