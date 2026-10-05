@@ -97,6 +97,8 @@ export function translator(lang: Lang) {
       [/^Download did not return a torrent file/, () => t('err.noTorrent')],
       [/^This tracker only provides \.torrent files$/, () => t('err.torrentOnly')],
       [/^Unsupported magnet link$/, () => t('err.badMagnet')],
+      [/^No peers sent the (torrent|video header) in time/, () => t('err.probeTimeout')],
+      [/^No video in this torrent/, () => t('err.noVideo')],
       [/^fetch failed/, () => t('err.connect')],
       [/aborted due to timeout/i, () => t('err.timeout')],
     ]

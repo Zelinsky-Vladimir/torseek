@@ -1,10 +1,11 @@
-import { ArrowDownToLine, Check, CircleAlert, ExternalLink, Loader2, Magnet, Star, Volume2 } from 'lucide-react'
+import { ArrowDownToLine, AudioLines, Check, CircleAlert, ExternalLink, Loader2, Magnet, Star } from 'lucide-react'
 import { groupKey, type ReleaseGroup } from '../../../core/release'
 import { categoryLabel } from '../categories'
 import { cx, formatAge, formatBytes, formatCount } from '../format'
 import { t } from '../i18n'
 import { grabStateOf, useStore } from '../store'
 import { Badge, IconButton } from '../ui'
+import { RealTrackBadges, TitleTrackBadges } from './TrackBadges'
 
 // One search result (a release, possibly found on several trackers). Used by the search
 // screen and the library.
@@ -25,7 +26,10 @@ export function ResultHeader() {
 
 export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight?: boolean }) {
   const r = group.primary
-  const { grab, copyMagnet, grabs, favoriteKeys, toggleFavorite } = useStore()
+  const { grab, copyMagnet, grabs, favoriteKeys, toggleFavorite, probes, probeTracks } = useStore()
+  // Checked here, or known from the same torrent in Downloads
+  const downloaded = useStore((s) => (r.infoHash ? s.torrents.find((x) => x.infoHash === r.infoHash!.toLowerCase())?.tracks : undefined))
+  const probe = probes[group.key] ?? (downloaded ? { tracks: downloaded } : undefined)
   const state = grabStateOf(grabs, r)
   const q = group.quality
   const cat = categoryLabel(r.categories)
@@ -45,7 +49,7 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
           {q.hdr && <Badge tone="warn">{q.hdr}</Badge>}
           {q.source && <Badge tone={q.source === 'CAM' ? 'bad' : 'neutral'}>{q.source}</Badge>}
           {q.codec && <Badge>{q.codec}</Badge>}
-          <AudioBadges audio={group.audio} />
+          {probe?.tracks ? <RealTrackBadges tracks={probe.tracks} /> : <TitleTrackBadges audio={group.audio} />}
           {freeleech && <Badge tone="good">{t('search.free')}</Badge>}
           <span className="truncate">
             <span className="text-fg/80">{r.indexerName}</span>
@@ -73,6 +77,14 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
             <ExternalLink className="size-4" />
           </IconButton>
         )}
+        <IconButton
+          label={probe?.error ? `${t('tracks.check')}: ${probe.error}` : t('tracks.check')}
+          onClick={() => void probeTracks(group)}
+          disabled={probe?.loading || !!probe?.tracks}
+          className={cx(probe?.loading || probe?.error ? '' : 'opacity-0 group-hover:opacity-100', probe?.error && '!text-warn', probe?.tracks && 'hidden')}
+        >
+          {probe?.loading ? <Loader2 className="size-4 animate-spin" /> : probe?.error ? <CircleAlert className="size-4" /> : <AudioLines className="size-4" />}
+        </IconButton>
         <IconButton label={t('search.copyMagnet')} onClick={() => void copyMagnet(r)} className="opacity-0 group-hover:opacity-100">
           <Magnet className="size-4" />
         </IconButton>
@@ -99,20 +111,3 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
   )
 }
 
-const AUDIO_LABEL: Record<string, string> = { en: 'ENG', ru: 'RUS', uk: 'UKR', fr: 'FRA', de: 'GER', es: 'SPA', it: 'ITA' }
-
-// Audio languages named in the title (a guess from the title, not from the files)
-function AudioBadges({ audio }: { audio: ReleaseGroup['audio'] }) {
-  const labels = [...(audio.multi ? ['MULTI'] : []), ...audio.langs.map((l) => AUDIO_LABEL[l]).filter(Boolean)].slice(0, 3)
-  if (!labels.length) return null
-  return (
-    <span className="flex items-center gap-1" title={t('search.audioHint')}>
-      <Volume2 className="size-3 text-faint" />
-      {labels.map((l) => (
-        <Badge key={l} tone={l === 'ENG' || l === 'MULTI' ? 'good' : 'neutral'}>
-          {l}
-        </Badge>
-      ))}
-    </span>
-  )
-}

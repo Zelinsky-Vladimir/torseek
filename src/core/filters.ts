@@ -1,4 +1,5 @@
-import { audioOf, hasAudio, type AudioInfo } from './audio'
+import { audioOf, hasAudio, hasSubtitles, type AudioInfo } from './audio'
+import type { MediaTracks } from './media-tracks'
 import { parentCategory } from './categories'
 import { parseQuality, type Release } from './release'
 
@@ -20,6 +21,7 @@ export const CHIP_MATCHERS: Record<ChipId, (cat: number) => boolean> = {
 }
 
 export type AudioFilter = 'en' | 'ru' | 'uk'
+export type SubsFilter = 'any' | 'en' | 'ru' | 'uk'
 
 export interface ResultFilters {
   chips?: ChipId[]
@@ -28,6 +30,8 @@ export interface ResultFilters {
   minSeeds?: number
   /** Releases voiced in this language */
   audio?: AudioFilter
+  /** Releases with subtitles (in this language) */
+  subs?: SubsFilter
   showAdult?: boolean
 }
 
@@ -38,12 +42,16 @@ export function matchesFilters(
   f: ResultFilters,
   resolution = parseQuality(r.title).resolution,
   audio: AudioInfo = audioOf(r.title, r.categories.includes(5070)),
+  /** Tracks read from the file, when the release was checked: they beat the title */
+  tracks?: MediaTracks,
 ): boolean {
   if (!f.showAdult && isAdult(r.categories)) return false
   if (f.chips?.length && !f.chips.some((id) => r.categories.some(CHIP_MATCHERS[id]))) return false
   if (f.resolutions?.length && !f.resolutions.includes(resolution ?? '')) return false
   if (f.minSeeds && (r.seeders ?? 0) < f.minSeeds) return false
-  if (f.audio && !hasAudio(audio, f.audio)) return false
+  const real = tracks?.tracks.length ? tracks.tracks : undefined
+  if (f.audio && !(real?.some((t) => t.kind === 'audio') ? real.some((t) => t.kind === 'audio' && t.lang === f.audio) : hasAudio(audio, f.audio))) return false
+  if (f.subs && !(real ? real.some((t) => t.kind === 'subtitle' && (f.subs === 'any' || t.lang === f.subs)) : hasSubtitles(audio, f.subs))) return false
   return true
 }
 

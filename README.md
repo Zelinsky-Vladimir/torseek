@@ -80,7 +80,9 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
   hand-written **Knaben, Torrents.csv, SubsPlease, Anilibria, AudioBook Bay**
 - **search in other languages**: type «дюна» and English trackers also get "Dune", Chinese ones "沙丘" (titles from Wikidata)
 - streaming results, duplicates merged across trackers, quality badges, category / quality / seed filters
-- **audio language filter** (English / Russian / Ukrainian, read from release names) and loose matches tucked away
+- **audio and subtitle filters** (English / Russian / Ukrainian), from release names, and **"check tracks"**: reads the
+  real audio/subtitle tracks from the MKV/MP4 header in seconds without downloading the release (also shown in Downloads)
+- loose matches the trackers pad results with are tucked away
 - trackers checked daily: working ones in your languages switched on, dead ones off
 - **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
 - **favorites**, **search history**, **watched searches**: re-checked in the background, notification on new releases
@@ -90,7 +92,8 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 
 **Client**
 - choose files in a torrent, open finished files, ask where to save (or always use one folder)
-- a list of live public trackers is added to every torrent, so magnets with dead trackers still start
+- a list of live public trackers is added to every torrent, so magnets with dead trackers still start;
+  DHT bootstraps from five routers and remembers its nodes between runs
 - tray icon, keeps downloading when the window is closed, notifications, start with the OS, magnet link handler
 - speed limits, seeding toggle, resume after restart
 

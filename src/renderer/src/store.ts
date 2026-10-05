@@ -1,4 +1,6 @@
-import type { AudioFilter } from '../../core/filters'
+import type { AudioFilter, SubsFilter } from '../../core/filters'
+import type { MediaTracks } from '../../core/media-tracks'
+import type { ReleaseGroup } from '../../core/release'
 import { create } from 'zustand'
 import type { AppSettings, HistoryItem, IndexerInfo, IndexerStatus, Release, ResultFilters, TitleInfo, TorrentInfo, UpdateStatus, Watch } from '../../shared/api'
 import type { ChipId } from '../../core/filters'
@@ -34,10 +36,14 @@ interface State {
   resolutions: string[]
   minSeeds: number
   audio?: AudioFilter
+  subs?: SubsFilter
+  /** Tracks read from the files of checked releases, by group key */
+  probes: Record<string, { loading?: boolean; tracks?: MediaTracks; error?: string }>
+  probeTracks: (g: ReleaseGroup) => Promise<void>
   /** The query the current results are for */
   searchedQuery: string
   sort: SortKey
-  setFilters: (patch: Partial<Pick<State, 'chips' | 'resolutions' | 'minSeeds' | 'sort' | 'audio'>>) => void
+  setFilters: (patch: Partial<Pick<State, 'chips' | 'resolutions' | 'minSeeds' | 'sort' | 'audio' | 'subs'>>) => void
   /** Movie/series card for the current query */
   title: TitleInfo | null
   searchId?: string
@@ -113,13 +119,26 @@ export const useStore = create<State>((set, get) => ({
   resolutions: [],
   minSeeds: 0,
   audio: undefined,
+  subs: undefined,
+  probes: {},
+  async probeTracks(g) {
+    const key = g.key
+    if (get().probes[key]?.loading) return
+    set((s) => ({ probes: { ...s.probes, [key]: { loading: true } } }))
+    try {
+      const tracks = await api.probeTracks(g.primary)
+      set((s) => ({ probes: { ...s.probes, [key]: { tracks } } }))
+    } catch (e) {
+      set((s) => ({ probes: { ...s.probes, [key]: { error: errorText(e) } } }))
+    }
+  },
   searchedQuery: '',
   sort: 'relevance',
   title: null,
   setFilters: (patch) => set(patch),
   currentFilters: () => {
-    const { chips, resolutions, minSeeds, audio } = get()
-    return { chips, resolutions, minSeeds, audio }
+    const { chips, resolutions, minSeeds, audio, subs } = get()
+    return { chips, resolutions, minSeeds, audio, subs }
   },
   running: false,
   releases: [],

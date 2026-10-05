@@ -40,6 +40,7 @@ declare module 'webtorrent' {
   namespace WebTorrent {
     interface Instance extends EventEmitter {
       torrents: Torrent[]
+      dht?: unknown
       add(torrentId: string | Uint8Array, opts?: { path?: string; deselect?: boolean; announce?: string[] }, onTorrent?: (t: Torrent) => void): Torrent
       throttleDownload(rate: number): void
       throttleUpload(rate: number): void

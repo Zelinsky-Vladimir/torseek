@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bell, BellRing, ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star, X, Languages } from 'lucide-react'
-import { matchesFilters, relevance, type AudioFilter } from '../../../core/filters'
+import { matchesFilters, relevance, type AudioFilter, type SubsFilter } from '../../../core/filters'
 import { groupReleases, type ReleaseGroup } from '../../../core/release'
 import type { IndexerStatus, TitleInfo } from '../../../shared/api'
 import { CATEGORY_CHIPS } from '../categories'
@@ -23,6 +23,7 @@ const resLabel = (r: string) => (r === '2160p' ? '4K' : r === '480p' ? 'SD' : r)
 const PAGE = 150
 
 const AUDIO: AudioFilter[] = ['en', 'ru', 'uk']
+const SUBS: SubsFilter[] = ['any', 'en', 'ru', 'uk']
 
 const SORTERS: Record<SortKey, (a: ReleaseGroup, b: ReleaseGroup) => number> = {
   // Relevance tiers are applied in the page; within a tier, best seeded first
@@ -38,7 +39,7 @@ const isVideo = (cats: number[]) => cats.some((c) => Math.floor(c / 1000) === 2 
 
 export function SearchPage() {
   const { query, setQuery, runSearch, cancelSearch, running, releases, statuses, chips, setChips, settings, indexers } = useStore()
-  const { resolutions, minSeeds, sort, setFilters, title, watches, watchCurrent, audio, searchedQuery, alsoSearched } = useStore()
+  const { resolutions, minSeeds, sort, setFilters, title, watches, watchCurrent, audio, subs, probes, searchedQuery, alsoSearched } = useStore()
   const [showLoose, setShowLoose] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [limit, setLimit] = useState(PAGE)
@@ -56,7 +57,7 @@ export function SearchPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  useEffect(() => setLimit(PAGE), [releases.length === 0, chips, resolutions, minSeeds, sort, audio])
+  useEffect(() => setLimit(PAGE), [releases.length === 0, chips, resolutions, minSeeds, sort, audio, subs])
   useEffect(() => setShowLoose(false), [searchedQuery])
 
   const groups = useMemo(() => [...groupReleases(releases).values()], [releases])
@@ -76,14 +77,14 @@ export function SearchPage() {
   }, [groups, searchedQuery, alsoSearched, title])
 
   const { filtered, hiddenLoose } = useMemo(() => {
-    const matching = groups.filter((g) => matchesFilters(g.primary, { chips, resolutions, minSeeds, audio, showAdult }, g.quality.resolution, g.audio))
+    const matching = groups.filter((g) => matchesFilters(g.primary, { chips, resolutions, minSeeds, audio, subs, showAdult }, g.quality.resolution, g.audio, probes[g.key]?.tracks))
     const score = (g: ReleaseGroup) => scores.get(g.key) ?? 0
     const relevant = matching.filter((g) => score(g) > 0)
     // Nothing matches by words (the site found it by something else): don't hide everything
     const shown = showLoose || relevant.length === 0 ? matching : relevant
     const tier = (g: ReleaseGroup) => (sort === 'relevance' ? score(g) : Math.min(1, score(g)))
     return { filtered: shown.sort((a, b) => tier(b) - tier(a) || SORTERS[sort](a, b)), hiddenLoose: matching.length - shown.length }
-  }, [groups, scores, chips, resolutions, minSeeds, audio, sort, showAdult, showLoose])
+  }, [groups, scores, chips, resolutions, minSeeds, audio, subs, probes, sort, showAdult, showLoose])
 
   const enabledCount = indexers.filter((i) => i.enabled).length
   const watched = watches.some((w) => w.query.toLowerCase() === query.trim().toLowerCase())
@@ -189,6 +190,21 @@ export function SearchPage() {
               {AUDIO.map((a) => (
                 <option key={a} value={a}>
                   {t(`search.audio.${a}` as Key)}
+                </option>
+              ))}
+            </select>
+          </label>
+          <label className="flex items-center gap-2" title={t('search.subsHint')}>
+            {t('search.subs')}
+            <select
+              value={subs ?? ''}
+              onChange={(e) => setFilters({ subs: (e.target.value || undefined) as SubsFilter | undefined })}
+              className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none"
+            >
+              <option value="">{t('search.any')}</option>
+              {SUBS.map((s) => (
+                <option key={s} value={s}>
+                  {t(`search.subs.${s}` as Key)}
                 </option>
               ))}
             </select>

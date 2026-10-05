@@ -6,6 +6,7 @@ import type { IndexerStatus } from '../core/search'
 import type { LangSetting } from './i18n'
 import type { ResultFilters } from '../core/filters'
 import type { AccentId, ThemeSetting } from './themes'
+import type { MediaTracks } from '../core/media-tracks'
 
 export type { ResultFilters }
 
@@ -70,6 +71,8 @@ export interface TorrentInfo {
   /** Some files are excluded; length/progress cover the selected ones */
   partial?: boolean
   source?: { indexerName: string; details?: string }
+  /** Audio / subtitle tracks of the main video, once read */
+  tracks?: MediaTracks
 }
 
 export interface TorrentFileInfo {
@@ -215,6 +218,8 @@ export interface Api {
   /** path: folder for this download; the default folder when omitted */
   download(release: Release, path?: string): Promise<{ infoHash: string }>
   getMagnet(release: Release): Promise<string>
+  /** Real audio / subtitle tracks of a release, read from the video header without downloading it */
+  probeTracks(release: Release): Promise<MediaTracks>
   addMagnet(uri: string, path?: string): Promise<{ infoHash: string }>
   listTorrents(): Promise<TorrentInfo[]>
   torrentFiles(infoHash: string): Promise<TorrentFileInfo[]>

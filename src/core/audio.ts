@@ -12,6 +12,36 @@ export interface AudioInfo {
   multi: boolean
   /** yes: tagged; likely: untagged scene-style title; no: only other languages */
   english: 'yes' | 'likely' | 'no'
+  /** Subtitle languages named in the title; "multi" for MultiSub-style tags */
+  subs: string[]
+  /** The title mentions subtitles at all */
+  hasSubs: boolean
+}
+
+const SUB_LANGS: [string, RegExp][] = [
+  ['en', /\b(?:eng|english|en)\b|англ/iu],
+  ['ru', /\b(?:rus|russian|ru)\b|рус/iu],
+  ['uk', /\b(?:ukr|ukrainian|ua)\b|укр/iu],
+  ['fr', /\b(?:fre|fra|french|fr)\b/iu],
+  ['de', /\b(?:ger|deu|german|de)\b/iu],
+  ['es', /\b(?:spa|esp|spanish|es)\b/iu],
+]
+
+/** Subtitles named in a (separator-normalized) title */
+function subsOf(t: string): { subs: string[]; hasSubs: boolean } {
+  const subs = new Set<string>()
+  for (const m of t.match(SUBTITLES) ?? []) for (const [lang, re] of SUB_LANGS) if (re.test(m)) subs.add(lang)
+  // ESubs / SDH are English subtitles by convention; MultiSub usually includes them
+  if (/\be-?subs?\b|\bsdh\b|\beng\s*subs?\b|\bsubbed\b/iu.test(t)) subs.add('en')
+  if (/\bmulti[\s-]*subs?\b|\bmultiple\s+subtitles?\b/iu.test(t)) subs.add('multi')
+  const hasSubs = subs.size > 0 || /\b(?:sub|subs|subtitles?|softsubs?|hardsubs?|e-?subs?)\b|субтитр|сабы/iu.test(t)
+  return { subs: [...subs], hasSubs }
+}
+
+/** Filter test for "subtitles": any, or a language ("multi" tags count for English) */
+export function hasSubtitles(info: AudioInfo, lang: 'any' | 'en' | 'ru' | 'uk'): boolean {
+  if (lang === 'any') return info.hasSubs
+  return info.subs.includes(lang) || (lang === 'en' && info.subs.includes('multi'))
 }
 
 // "Sub Eng", "Subs: Rus, Eng", "Субтитры: английские" describe subtitles, not audio
@@ -33,13 +63,15 @@ const NON_LATIN = /[\p{Script=Cyrillic}\p{Script=Han}\p{Script=Hiragana}\p{Scrip
 /** anime: untagged anime releases carry Japanese audio, not English */
 export function audioOf(title: string, anime = false): AudioInfo {
   // Separators that \b wouldn't see: "Rus.Eng", "Dual-Audio", "[ENG]"
-  const t = title.replace(/[._[\](){}]/g, ' ').replace(SUBTITLES, ' ')
+  const spaced = title.replace(/[._[\](){}]/g, ' ')
+  const { subs, hasSubs } = subsOf(spaced)
+  const t = spaced.replace(SUBTITLES, ' ')
   const langs = PATTERNS.filter(([, re]) => re.test(t)).map(([l]) => l)
   const multi = /\bmulti\b|\bdual[\s-]*audio\b|мульти/iu.test(t)
   const english = langs.includes('en') || multi ? 'yes' : langs.length || anime || NON_LATIN.test(t) ? 'no' : 'likely'
   // A Cyrillic title on a Russian/Ukrainian tracker is voiced in Russian unless it says otherwise
   if (!langs.includes('ru') && !langs.includes('uk') && /\p{Script=Cyrillic}/u.test(title) && !/субтитр/iu.test(title)) langs.push('ru')
-  return { langs, multi, english }
+  return { langs, multi, english, subs, hasSubs }
 }
 
 /** Filter test for "audio language" */

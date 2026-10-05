@@ -7,6 +7,7 @@ import { cx, formatBytes, formatEta, formatSpeed } from '../format'
 import { errorText, useStore } from '../store'
 import { Button, EmptyState, IconButton, Input, ProgressBar } from '../ui'
 import { t, t as tr, translateError, type Key } from '../i18n'
+import { RealTrackBadges } from '../components/TrackBadges'
 
 const STATE_LABEL: Record<TorrentState, Key> = {
   metadata: 'dl.state.metadata',
@@ -125,6 +126,7 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
             )}
             {t.partial && <span className="text-warn">{tr('dl.partial')}</span>}
             {t.source && <span className="text-faint">{tr('dl.from', { name: t.source.indexerName })}</span>}
+            {t.tracks && <RealTrackBadges tracks={t.tracks} />}
             {t.error && <span className="truncate text-bad">{translateError(t.error)}</span>}
           </div>
         </div>

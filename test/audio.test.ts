@@ -47,3 +47,20 @@ describe('relevance', () => {
     expect(relevance('Ёлки 2 (2011)', ['елки'])).toBe(2)
   })
 })
+
+describe('subtitles from titles', () => {
+  const subs = (title: string) => audioOf(title).subs.sort()
+  it('reads subtitle tags', () => {
+    expect(subs('Dune.2021.1080p.WEB-DL.Rus.Sub.Eng')).toEqual(['en'])
+    expect(subs('Dune Prophecy Season 1 COMPLETE 1080p MAX WEB DL x264 ESubs 5 4G')).toEqual(['en'])
+    expect(subs('Movie (2020) BDRip 1080p | Sub: Rus, Eng')).toEqual(['en', 'ru'])
+    expect(subs('Дюна (2021) BDRip | Дубляж | Субтитры: русские, английские')).toEqual(['en', 'ru'])
+    expect(subs('[Erai-raws] Frieren - 12 [1080p][Multiple Subtitle]')).toEqual(['multi'])
+    expect(subs('The.Movie.2019.2160p.WEB-DL.DDP5.1.SDH')).toEqual(['en'])
+    expect(subs('Dune.Part.Two.2024.1080p.BluRay.x264-SPARKS')).toEqual([])
+    expect(audioOf('[SubsPlease] Frieren - 12 (1080p)').hasSubs).toBe(false)
+  })
+  it('does not take subtitle languages for audio', () => {
+    expect(audioOf('Movie (2020) BDRip 1080p | Sub: Rus, Eng').langs).toEqual([])
+  })
+})

@@ -287,6 +287,10 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       refreshTray()
       return res
     },
+    async probeTracks(release) {
+      const target = await resolveRelease(release)
+      return torrents.probe(target, await torrents.infoHashOf(target))
+    },
     async getMagnet(release) {
       if (release.magnet) return release.magnet
       const target = await resolveRelease(release)
@@ -702,5 +706,7 @@ app.on('before-quit', (e) => {
   watcher?.stop()
   void torznab?.stop()
   library?.close()
-  void torrents.destroy().finally(() => app.quit())
+  // Closing peer connections can stall on a dead socket; never let that keep the app alive
+  const stop = torrents.destroy().catch((e) => log(`shutdown: ${(e as Error).message}`))
+  void Promise.race([stop, new Promise((resolve) => setTimeout(resolve, 5000))]).finally(() => app.quit())
 })

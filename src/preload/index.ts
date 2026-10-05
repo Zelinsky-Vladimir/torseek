@@ -32,7 +32,7 @@ const methods: ApiMethod[] = [
   'search', 'cancelSearch',
   'listIndexers', 'setIndexerEnabled', 'updateIndexerSettings', 'testIndexer',
   'passChallenge', 'checkTrackers', 'trackerCheckStatus',
-  'download', 'getMagnet', 'addMagnet', 'listTorrents', 'torrentFiles',
+  'download', 'getMagnet', 'probeTracks', 'addMagnet', 'listTorrents', 'torrentFiles',
   'pauseTorrent', 'resumeTorrent', 'removeTorrent', 'openTorrentFolder', 'openTorrentFile',
   'setFileSelection',
   'getSettings', 'updateSettings', 'chooseDownloadDir', 'chooseFolder', 'openExternal',

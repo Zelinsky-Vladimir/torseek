@@ -49,6 +49,11 @@ await page.waitForTimeout(800)
 await shot(page, 'feat-3-audio-en')
 const count = await page.evaluate(() => document.body.innerText.match(/\d+ результат\S*( из \d+)?/)?.[0])
 console.log('with English audio:', count)
+await page.selectOption('select:near(:text("Субтитры"))', 'en')
+await page.waitForTimeout(800)
+await shot(page, 'feat-3b-subs-en')
+console.log('with English audio + subtitles:', await page.evaluate(() => document.body.innerText.match(/\d+ результат\S*( из \d+)?/)?.[0]))
+await page.selectOption('select:near(:text("Субтитры"))', '')
 
 // 3. Download asks where to save
 await page.locator('button[title="Скачать"]').first().click()
@@ -66,4 +71,6 @@ for (let i = 0; i < 60 && !files.length; i++) {
 }
 console.log(`dead-tracker magnet: ${files.length ? `metadata in ~${files.length && 'under 60'}s, ${files.length} files` : 'NO METADATA after 60s'}`)
 await page.evaluate((h) => window.api.removeTorrent(h, true), infoHash)
+const t1 = Date.now()
 await app.close()
+console.log(`closed in ${((Date.now() - t1) / 1000).toFixed(1)}s`)

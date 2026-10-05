@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 import WebTorrent from 'webtorrent'
@@ -5,6 +6,7 @@ import type { Torrent, TorrentFile } from 'webtorrent'
 import parseTorrent from 'parse-torrent'
 import type { DownloadTarget } from '../core/indexer'
 import { magnetToInfoHash } from '../core/release'
+import { externalSubtitles, mainVideo, readMediaTracks, type MediaTracks } from '../core/media-tracks'
 import type { TorrentFileInfo, TorrentInfo } from '../shared/api'
 import type { JsonStore } from './store'
 
@@ -29,6 +31,8 @@ export interface TorrentRecord {
   /** File indexes the user chose not to download */
   deselected?: number[]
   source?: { indexerName: string; details?: string }
+  /** Audio / subtitle tracks of the main video, read from its header */
+  tracks?: MediaTracks
 }
 
 export interface TorrentStoreShape {
@@ -43,6 +47,16 @@ export interface TorrentManagerOptions {
 
 // Added to every torrent, as most clients do: magnets from index sites often list only
 // trackers that died years ago, and then the metadata never arrives
+// DHT entry points. The library's default three barely answer from many networks
+// (1 node, 0 peers in a minute where this list gets ~25 nodes and dozens of peers)
+const DHT_BOOTSTRAP = [
+  'router.bittorrent.com:6881',
+  'router.utorrent.com:6881',
+  'dht.transmissionbt.com:6881',
+  'dht.libtorrent.org:25401',
+  'dht.aelitis.com:6881',
+]
+
 const PUBLIC_TRACKERS = [
   'udp://tracker.opentrackr.org:1337/announce',
   'udp://open.demonii.com:1337/announce',
@@ -67,12 +81,31 @@ export class TorrentManager {
     private readonly opts: TorrentManagerOptions,
     private readonly log: (msg: string) => void = () => {},
   ) {
-    this.client = new WebTorrent()
+    // Nodes from the last run make the DHT useful right away instead of after minutes
+    let nodes: unknown[] | undefined
+    try {
+      nodes = JSON.parse(readFileSync(this.dhtFile(), 'utf8'))
+    } catch {
+      /* first run */
+    }
+    this.client = new WebTorrent({ dht: { bootstrap: DHT_BOOTSTRAP, ...(nodes?.length ? { nodes } : {}) } })
     this.client.on('error', (err) => this.log(`webtorrent: ${String(err)}`))
+    setInterval(() => void this.saveDhtNodes(), 10 * 60_000).unref()
+  }
+
+  private dhtFile() {
+    return join(this.metaDir, 'dht-nodes.json')
+  }
+
+  private async saveDhtNodes() {
+    const nodes = (this.client.dht as { toJSON?: () => { nodes: unknown[] } } | undefined)?.toJSON?.().nodes
+    if (nodes?.length) await writeFile(this.dhtFile(), JSON.stringify(nodes.slice(0, 500))).catch(() => {})
   }
 
   async init() {
     await mkdir(this.metaDir, { recursive: true })
+    // Leftovers of track probes interrupted by a quit
+    await rm(join(this.metaDir, 'probe'), { recursive: true, force: true }).catch(() => {})
     for (const rec of this.records()) if (!rec.paused) void this.start(rec)
   }
 
@@ -148,6 +181,7 @@ export class TorrentManager {
       if (partial) this.applySelection(torrent, this.record(rec.infoHash).deselected ?? [])
       torrent.files.forEach((f) => f.on('done', () => this.checkComplete(rec.infoHash)))
       this.checkComplete(rec.infoHash)
+      if (!this.record(rec.infoHash).tracks) void this.detectTracks(torrent).then((tracks) => tracks && this.patch(rec.infoHash, { tracks }))
     })
     torrent.on('error', (err) => {
       this.errors.set(rec.infoHash, String((err as Error)?.message ?? err))
@@ -183,6 +217,79 @@ export class TorrentManager {
       // More files were selected after completion
       this.patch(infoHash, { done: false })
     }
+  }
+
+  // --- Tracks: what audio / subtitles the release really has ---
+
+  private probes = new Map<string, Promise<MediaTracks>>()
+
+  /** Tracks of a ready torrent's main video, plus subtitle files next to it */
+  private async detectTracks(torrent: Torrent): Promise<MediaTracks | undefined> {
+    const main = mainVideo(torrent.files)
+    const external = externalSubtitles(torrent.files.map((f) => f.path))
+    if (!main) return external.length ? { file: '', container: 'other', tracks: external } : undefined
+    const read = async (start: number, end: number) => {
+      const chunks: Uint8Array[] = []
+      for await (const c of main.createReadStream({ start, end })) chunks.push(c)
+      return Buffer.concat(chunks)
+    }
+    try {
+      const found = await readMediaTracks(main.path, main.length, read)
+      return { ...found, tracks: [...found.tracks, ...external] }
+    } catch (e) {
+      this.log(`tracks ${torrent.infoHash}: ${(e as Error).message}`)
+      return undefined
+    }
+  }
+
+  /**
+   * Tracks of a release without downloading it: join the swarm for the metadata and the
+   * first piece(s) of the video, read the header, leave. Torrents already in the list are
+   * read in place.
+   */
+  async infoHashOf(target: DownloadTarget): Promise<string> {
+    const hash = target.kind === 'torrent' ? (await parseTorrent(Buffer.from(target.data))).infoHash : magnetToInfoHash(target.uri)
+    if (!hash || !/^[0-9a-f]{40}$/.test(hash)) throw new Error('Unsupported magnet link')
+    return hash
+  }
+
+  probe(target: DownloadTarget, infoHash: string): Promise<MediaTracks> {
+    const cached = this.probes.get(infoHash)
+    if (cached) return cached
+    const rec = this.records().find((r) => r.infoHash === infoHash)
+    if (rec?.tracks) return Promise.resolve(rec.tracks)
+    const live = this.live.get(infoHash)
+    const run = async (): Promise<MediaTracks> => {
+      if (live) {
+        if (!live.ready) await new Promise((resolve) => live.once('ready', resolve))
+        const t = await this.detectTracks(live)
+        if (!t) throw new Error('No video in this torrent')
+        return t
+      }
+      const dir = join(this.metaDir, 'probe', infoHash)
+      const id = target.kind === 'torrent' ? target.data : target.uri
+      const torrent = this.client.add(id, { path: dir, deselect: true, announce: PUBLIC_TRACKERS })
+      try {
+        await new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => reject(new Error('No peers sent the torrent in time')), 90_000)
+          torrent.once('ready', () => (clearTimeout(timer), resolve()))
+          torrent.once('error', (e) => (clearTimeout(timer), reject(e)))
+        })
+        const t = await Promise.race([
+          this.detectTracks(torrent),
+          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('No peers sent the video header in time')), 120_000)),
+        ])
+        if (!t) throw new Error('No video in this torrent')
+        return t
+      } finally {
+        await new Promise<void>((resolve) => torrent.destroy({ destroyStore: true }, () => resolve()))
+        await rm(dir, { recursive: true, force: true }).catch(() => {})
+      }
+    }
+    const p = run()
+    this.probes.set(infoHash, p)
+    p.catch(() => this.probes.delete(infoHash))
+    return p
   }
 
   /** Choose which files to download (indexes into the torrent's file list). */
@@ -266,6 +373,7 @@ export class TorrentManager {
         source: rec.source,
         error,
         partial: (rec.deselected?.length ?? 0) > 0,
+        tracks: rec.tracks,
       }
       if (!t) {
         return {
@@ -316,6 +424,7 @@ export class TorrentManager {
   }
 
   async destroy() {
+    await this.saveDhtNodes()
     await new Promise<void>((resolve) => this.client.destroy(() => resolve()))
   }
 }
