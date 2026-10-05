@@ -18,7 +18,7 @@ const query = args.find((a, i) => !a.startsWith('--') && !args[i - 1]?.startsWit
 const app = await electron.launch({
   executablePath: join(root, 'node_modules/electron/dist', process.platform === 'win32' ? 'electron.exe' : 'electron'),
   args: [root],
-  env: { ...process.env, TORSEEK_USER_DATA: mkdtempSync(join(tmpdir(), 'torseek-e2e-')) },
+  env: { ...process.env, TORSEEK_USER_DATA: mkdtempSync(join(tmpdir(), 'torseek-e2e-')), TORSEEK_NO_UPDATE: '1', TORSEEK_LANG: 'en' },
 })
 app.process().stderr?.on('data', (d) => /error/i.test(String(d)) && process.stdout.write(`[main:err] ${d}`))
 const page = await app.firstWindow()

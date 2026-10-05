@@ -1,7 +1,7 @@
 {
   "name": "torseek",
   "productName": "Torseek",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "description": "Desktop meta-search for torrent trackers with a built-in client. Runs Jackett (Cardigann) definitions.",
   "license": "GPL-2.0-only",
   "type": "module",
@@ -81,7 +81,13 @@
     },
     "mac": {
       "target": [
-        "dmg"
+        {
+          "target": "dmg",
+          "arch": [
+            "arm64",
+            "x64"
+          ]
+        }
       ],
       "category": "public.app-category.utilities",
       "icon": "build/icon.png"
@@ -91,10 +97,21 @@
         "AppImage"
       ],
       "category": "Network",
-      "icon": "build/icon.png"
+      "icon": "build/icon.png",
+      "maintainer": "Vladimir <34725004+Zelinsky-Vladimir@users.noreply.github.com>"
     },
     "asarUnpack": [
       "**/*.node"
-    ]
+    ],
+    "publish": null
+  },
+  "author": {
+    "name": "Vladimir",
+    "email": "34725004+Zelinsky-Vladimir@users.noreply.github.com"
+  },
+  "homepage": "https://github.com/Zelinsky-Vladimir/torseek",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Zelinsky-Vladimir/torseek.git"
   }
 }

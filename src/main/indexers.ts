@@ -39,6 +39,15 @@ export interface Secrets {
 const SECRET_FIELDS = new Set(['password', 'cookie', 'apikey', 'passkey', 'rsskey', 'token', 'pin', '2facode'])
 const isSecret = (name: string, type?: string) => type === 'password' || SECRET_FIELDS.has(name.toLowerCase())
 
+export type WindowText = (key: 'signinAuto' | 'signinManual' | 'challenge', name: string) => string
+
+const ENGLISH_TEXT: WindowText = (key, name) =>
+  ({
+    signinAuto: `Sign in to ${name} — this window closes by itself once you're in`,
+    signinManual: `Sign in to ${name}, then close this window`,
+    challenge: `${name}: complete the check if one is shown — this window closes by itself`,
+  })[key]
+
 /** Opens a tracker site for the user; resolves 'done' when isDone() turned true. */
 export type SiteOpener = (opts: { url: string; title: string; isDone?: () => Promise<boolean> }) => Promise<'done' | 'closed'>
 
@@ -54,6 +63,7 @@ export class IndexerManager {
     private readonly openSite: SiteOpener,
     private readonly log: (msg: string) => void = () => {},
     private readonly secrets: Secrets = { seal: (s) => s, open: (s) => s },
+    private readonly text: WindowText = ENGLISH_TEXT,
   ) {}
 
   private secretKeys(id: string): Set<string> {
@@ -186,7 +196,7 @@ export class IndexerManager {
     const testable = ix.canTestLogin
     const result = await this.openSite({
       url: ix.loginPageUrl,
-      title: testable ? `Sign in to ${ix.name} — this window closes by itself once you're in` : `Sign in to ${ix.name}, then close this window`,
+      title: this.text(testable ? 'signinAuto' : 'signinManual', ix.name),
       isDone: testable ? () => ix.testLogin(AbortSignal.timeout(15_000)) : undefined,
     })
     if (result === 'done') return this.authResult(id, true)
@@ -215,7 +225,7 @@ export class IndexerManager {
     const check = () => ix.checkAccess(AbortSignal.timeout(15_000))
     const result = await this.openSite({
       url: ix.siteLink,
-      title: `${ix.name}: complete the check if one is shown — this window closes by itself`,
+      title: this.text('challenge', ix.name),
       isDone: check,
     })
     const ok = result === 'done' || (await check().catch(() => false))

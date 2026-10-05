@@ -2,6 +2,7 @@ import { useEffect, useState, type ReactNode } from 'react'
 import { FolderOpen, RefreshCw } from 'lucide-react'
 import type { AppSettings, DefinitionsStatus } from '../../../shared/api'
 import { api } from '../api'
+import { LANGUAGES, t } from '../i18n'
 import { errorText, useStore } from '../store'
 import { Button, Input, Toggle } from '../ui'
 
@@ -13,12 +14,29 @@ export function SettingsPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="drag border-b border-line/70 px-6 pb-3 pt-3.5">
-        <h1 className="text-[17px] font-semibold">Settings</h1>
+        <h1 className="text-[17px] font-semibold">{t('set.title')}</h1>
       </div>
       <div className="min-h-0 flex-1 overflow-y-auto px-6 py-6">
         <div className="mx-auto max-w-2xl space-y-8">
-          <Section title="Downloads">
-            <Row label="Save to" hint="New torrents are downloaded into this folder.">
+          <Section title={t('set.section.general')}>
+            <Row label={t('set.language')} hint={t('set.languageHint')}>
+              <select
+                value={settings.language}
+                onChange={(e) => save({ language: e.target.value as AppSettings['language'] })}
+                className="h-9 rounded-lg border border-line bg-panel-2 px-2 text-[13px] outline-none"
+              >
+                <option value="auto">{t('set.language.auto')}</option>
+                {LANGUAGES.map((l) => (
+                  <option key={l.code} value={l.code}>
+                    {l.name}
+                  </option>
+                ))}
+              </select>
+            </Row>
+          </Section>
+
+          <Section title={t('set.section.downloads')}>
+            <Row label={t('set.saveTo')} hint={t('set.saveToHint')}>
               <div className="flex gap-2">
                 <Input readOnly value={settings.downloadDir} className="flex-1" />
                 <Button
@@ -28,43 +46,39 @@ export function SettingsPage() {
                     if (dir) useStore.setState({ settings: { ...settings, downloadDir: dir } })
                   }}
                 >
-                  Change
+                  {t('set.change')}
                 </Button>
               </div>
             </Row>
-            <Row label="Keep seeding" hint="Continue uploading after a download completes. Good for ratio and for the swarm.">
+            <Row label={t('set.seed')} hint={t('set.seedHint')}>
               <Toggle checked={settings.seedAfterDownload} onChange={(v) => save({ seedAfterDownload: v })} />
             </Row>
-            <Row label="Download limit" hint="KB/s, 0 for unlimited">
+            <Row label={t('set.dlLimit')} hint={t('set.limitHint')}>
               <NumberInput value={settings.downloadLimit} onCommit={(v) => save({ downloadLimit: v })} />
             </Row>
-            <Row label="Upload limit" hint="KB/s, 0 for unlimited">
+            <Row label={t('set.ulLimit')} hint={t('set.limitHint')}>
               <NumberInput value={settings.uploadLimit} onCommit={(v) => save({ uploadLimit: v })} />
             </Row>
           </Section>
 
-          <Section title="Search">
-            <Row label="Parallel trackers" hint="How many sites are queried at the same time.">
+          <Section title={t('set.section.search')}>
+            <Row label={t('set.parallel')} hint={t('set.parallelHint')}>
               <NumberInput value={settings.searchConcurrency} min={1} max={64} onCommit={(v) => save({ searchConcurrency: v })} />
             </Row>
-            <Row label="Tracker timeout" hint="Seconds to wait for a slow site before giving up on it.">
+            <Row label={t('set.timeout')} hint={t('set.timeoutHint')}>
               <NumberInput value={settings.searchTimeoutSec} min={5} max={120} onCommit={(v) => save({ searchTimeoutSec: v })} />
             </Row>
-            <Row label="Show adult content" hint="Show the XXX category and results that are only in it.">
+            <Row label={t('set.adult')} hint={t('set.adultHint')}>
               <Toggle checked={settings.showAdult} onChange={(v) => save({ showAdult: v })} />
             </Row>
           </Section>
 
-          <Section title="Trackers">
+          <Section title={t('set.section.trackers')}>
             <DefinitionsRow />
           </Section>
 
-          <Section title="About">
-            <p className="text-[13px] leading-relaxed text-muted">
-              Torseek runs the community-maintained Cardigann tracker definitions from the Jackett project (GPL-2.0). Drop updated or custom
-              <code className="mx-1 rounded bg-panel-2 px-1 py-0.5 text-[12px]">.yml</code>
-              definitions into the <code className="rounded bg-panel-2 px-1 py-0.5 text-[12px]">definitions</code> folder inside the app data directory to override the bundled ones.
-            </p>
+          <Section title={t('set.section.about')}>
+            <p className="px-4 py-3.5 text-[13px] leading-relaxed text-muted">{t('set.about')}</p>
           </Section>
         </div>
       </div>
@@ -78,12 +92,10 @@ function DefinitionsRow() {
   const [busy, setBusy] = useState(false)
   useEffect(() => void api.definitionsStatus().then(setStatus), [])
 
-  const hint = status?.checkedAt
-    ? `Last updated ${new Date(status.checkedAt).toLocaleString()}. Checked automatically once a day.`
-    : 'Not updated yet; the definitions bundled with the app are used. Checked automatically once a day.'
+  const hint = status?.checkedAt ? t('set.definitionsLast', { date: new Date(status.checkedAt).toLocaleString() }) : t('set.definitionsNever')
 
   return (
-    <Row label="Tracker definitions" hint={hint}>
+    <Row label={t('set.definitions')} hint={hint}>
       <Button
         icon={<RefreshCw className="size-4" />}
         loading={busy || status?.updating}
@@ -92,11 +104,11 @@ function DefinitionsRow() {
           try {
             const s = await api.updateDefinitions()
             setStatus({ ...s })
-            if (s.error) toast({ kind: 'error', text: `Update failed: ${s.error}` })
+            if (s.error) toast({ kind: 'error', text: t('set.updateFailed', { error: s.error }) })
             else {
               const r = s.lastResult!
               const changed = r.updated + r.added + r.removed
-              toast({ kind: 'success', text: changed ? `${r.updated} updated, ${r.added} new, ${r.removed} removed` : 'All tracker definitions are up to date' })
+              toast({ kind: 'success', text: changed ? t('set.updateResult', { updated: r.updated, added: r.added, removed: r.removed }) : t('set.upToDate') })
             }
           } catch (e) {
             toast({ kind: 'error', text: errorText(e) })
@@ -105,7 +117,7 @@ function DefinitionsRow() {
           }
         }}
       >
-        Update now
+        {t('set.updateNow')}
       </Button>
     </Row>
   )

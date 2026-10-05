@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type { AppSettings, IndexerInfo, IndexerStatus, Release, TorrentInfo } from '../../shared/api'
 import { api } from './api'
+import { resolveLang, setLang, t, translateError, type Lang } from './i18n'
 
 export type Page = 'search' | 'downloads' | 'trackers' | 'settings'
 
@@ -48,6 +49,7 @@ interface State {
   patchIndexer: (info: IndexerInfo) => void
   saveSettings: (patch: Partial<AppSettings>) => Promise<void>
 
+  lang: Lang
   toasts: Toast[]
   toast: (t: Omit<Toast, 'id'>) => void
   dismissToast: (id: number) => void
@@ -61,14 +63,14 @@ export const useStore = create<State>((set, get) => ({
   setPage: (page) => set({ page }),
   openTracker: (id) => set({ page: 'trackers', focusTracker: id }),
   async passChallenge(id, name) {
-    get().toast({ kind: 'info', text: `Opening ${name}. Complete the check if the site shows one` })
+    get().toast({ kind: 'info', text: t('tr.challenge.opening', { name }) })
     try {
       const res = await api.passChallenge(id)
       get().patchIndexer(res.info)
       get().toast(
         res.ok
-          ? { kind: 'success', text: `${name} is reachable now`, action: { label: 'Search again', run: () => void get().runSearch() } }
-          : { kind: 'error', text: `${name}: ${res.message}` },
+          ? { kind: 'success', text: t('tr.challenge.ok', { name }), action: { label: t('tr.challenge.again'), run: () => void get().runSearch() } }
+          : { kind: 'error', text: `${name}: ${translateError(res.message ?? '')}` },
       )
     } catch (e) {
       get().toast({ kind: 'error', text: errorText(e) })
@@ -104,7 +106,7 @@ export const useStore = create<State>((set, get) => ({
     try {
       await api.download(r)
       set((s) => ({ grabs: { ...s.grabs, [key]: 'done' } }))
-      get().toast({ kind: 'success', text: `Added “${truncate(r.title, 60)}”`, action: { label: 'Show', run: () => get().setPage('downloads') } })
+      get().toast({ kind: 'success', text: t('dl.added', { title: truncate(r.title, 60) }), action: { label: t('common.show'), run: () => get().setPage('downloads') } })
     } catch (e) {
       set((s) => ({ grabs: { ...s.grabs, [key]: 'error' } }))
       get().toast({ kind: 'error', text: `${r.indexerName}: ${errorText(e)}` })
@@ -114,7 +116,7 @@ export const useStore = create<State>((set, get) => ({
     try {
       const magnet = await api.getMagnet(r)
       await navigator.clipboard.writeText(magnet)
-      get().toast({ kind: 'info', text: 'Magnet link copied' })
+      get().toast({ kind: 'info', text: t('dl.magnetCopied') })
     } catch (e) {
       get().toast({ kind: 'error', text: errorText(e) })
     }
@@ -129,8 +131,10 @@ export const useStore = create<State>((set, get) => ({
     set((s) => ({ indexers: s.indexers.map((i) => (i.id === info.id ? info : i)) }))
   },
   async saveSettings(patch) {
-    set({ settings: await api.updateSettings(patch) })
+    applySettings(await api.updateSettings(patch))
   },
+
+  lang: 'en',
 
   toasts: [],
   toast(t) {
@@ -146,7 +150,13 @@ export const useStore = create<State>((set, get) => ({
 export const grabStateOf = (grabs: Record<string, GrabState>, r: Release) => grabs[grabKey(r)]
 
 // Electron wraps errors thrown in the main process: "Error invoking remote method 'x': Error: msg"
-export const errorText = (e: unknown) => String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (Error: )?/, '')
+export const errorText = (e: unknown) => translateError(String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, ''))
+
+function applySettings(settings: AppSettings) {
+  const lang = resolveLang(settings.language)
+  setLang(lang)
+  useStore.setState({ settings, lang })
+}
 
 const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '…' : s)
 
@@ -166,7 +176,7 @@ api.onSearchEvent((e) => {
 api.onTorrents((torrents) => useStore.setState({ torrents }))
 api.onIndexersChanged(() => void useStore.getState().loadIndexers())
 
-void api.getSettings().then((settings) => useStore.setState({ settings }))
+void api.getSettings().then(applySettings)
 void api.listTorrents().then((torrents) => useStore.setState({ torrents }))
 void useStore.getState().loadIndexers()
 

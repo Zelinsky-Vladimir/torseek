@@ -41,6 +41,11 @@ describe('.NET regex compatibility', () => {
     expect(dotnetReplace('S01E02', 'S(?<s>\\d+)E(\\d+)', '${s}x$2')).toBe('01x02')
     expect(dotnetReplace('abc', 'b', '[$0]')).toBe('a[b]c')
   })
+  it('keeps Unicode semantics for \W inside character classes', () => {
+    // TPB keyword filter: CJK and non-word runs become "." but Cyrillic words survive
+    expect(dotnetReplace('дюна 2', '([\\p{IsCJKUnifiedIdeographs}\\W]+)', '.')).toBe('дюна.2')
+    expect(dotnetReplace('a-b дю', '[^\\W]+', 'x')).toBe('x-x x')
+  })
   it('handles Unicode blocks and lone braces', () => {
     expect(dotnetReplace('Матрица Matrix', '[\\p{IsCyrillic}]+\\s*', '')).toBe('Matrix')
     expect(dotnetReplace('{x}', '{x}', 'y')).toBe('y')
