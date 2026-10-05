@@ -5,14 +5,15 @@ import { api } from '../api'
 import { cx, formatBytes, formatEta, formatSpeed } from '../format'
 import { errorText, useStore } from '../store'
 import { Button, EmptyState, IconButton, Input, ProgressBar } from '../ui'
+import { t, t as tr, translateError, type Key } from '../i18n'
 
-const STATE_LABEL: Record<TorrentState, string> = {
-  metadata: 'Fetching metadata',
-  downloading: 'Downloading',
-  seeding: 'Seeding',
-  paused: 'Paused',
-  done: 'Completed',
-  error: 'Error',
+const STATE_LABEL: Record<TorrentState, Key> = {
+  metadata: 'dl.state.metadata',
+  downloading: 'dl.state.downloading',
+  seeding: 'dl.state.seeding',
+  paused: 'dl.state.paused',
+  done: 'dl.state.done',
+  error: 'dl.state.error',
 }
 
 type Filter = 'all' | 'active' | 'done'
@@ -30,7 +31,7 @@ export function DownloadsPage() {
   )
 
   const addMagnet = async () => {
-    if (!magnet.trim().startsWith('magnet:')) return toast({ kind: 'error', text: 'Paste a magnet: link' })
+    if (!magnet.trim().startsWith('magnet:')) return toast({ kind: 'error', text: t('dl.badMagnet') })
     try {
       await api.addMagnet(magnet)
       setMagnet('')
@@ -42,11 +43,11 @@ export function DownloadsPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="drag flex items-center gap-4 border-b border-line/70 px-6 pb-3 pt-3.5">
-        <h1 className="text-[17px] font-semibold">Downloads</h1>
+        <h1 className="text-[17px] font-semibold">{t('dl.title')}</h1>
         <div className="no-drag flex items-center gap-1 rounded-lg bg-panel p-0.5 text-[12.5px]">
           {(['all', 'active', 'done'] as Filter[]).map((f) => (
-            <button key={f} onClick={() => setFilter(f)} className={cx('rounded-md px-2.5 py-1 capitalize', filter === f ? 'bg-hover text-fg' : 'text-muted hover:text-fg')}>
-              {f === 'done' ? 'Finished' : f}
+            <button key={f} onClick={() => setFilter(f)} className={cx('whitespace-nowrap rounded-md px-2.5 py-1', filter === f ? 'bg-hover text-fg' : 'text-muted hover:text-fg')}>
+              {t(`dl.filter.${f}`)}
             </button>
           ))}
         </div>
@@ -67,17 +68,17 @@ export function DownloadsPage() {
             void addMagnet()
           }}
         >
-          <Input value={magnet} onChange={(e) => setMagnet(e.target.value)} placeholder="Paste a magnet link…" className="flex-1" />
+          <Input value={magnet} onChange={(e) => setMagnet(e.target.value)} placeholder={t('dl.magnetPlaceholder')} className="flex-1" />
           <Button type="submit" icon={<Magnet className="size-4" />} disabled={!magnet.trim()}>
-            Add
+            {t('dl.add')}
           </Button>
         </form>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         {shown.length === 0 ? (
-          <EmptyState icon={<Inbox className="size-6" />} title={torrents.length ? 'Nothing here' : 'No downloads yet'}>
-            {torrents.length ? 'No torrents match this filter.' : 'Hit the download button next to any search result, or paste a magnet link above.'}
+          <EmptyState icon={<Inbox className="size-6" />} title={torrents.length ? t('dl.noneTitle') : t('dl.emptyTitle')}>
+            {torrents.length ? t('dl.noneText') : t('dl.emptyText')}
           </EmptyState>
         ) : (
           shown.map((t) => <TorrentRow key={t.infoHash} t={t} onRemove={() => setRemoving(t)} />)
@@ -103,21 +104,19 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
             {t.name}
           </div>
           <div className="mt-1 flex items-center gap-3 text-[12px] tabular-nums text-muted">
-            <span className={cx(t.state === 'error' ? 'text-bad' : t.state === 'seeding' ? 'text-good' : '')}>{STATE_LABEL[t.state]}</span>
+            <span className={cx(t.state === 'error' ? 'text-bad' : t.state === 'seeding' ? 'text-good' : '')}>{tr(STATE_LABEL[t.state])}</span>
             {t.length > 0 && (
-              <span>
-                {formatBytes(t.downloaded)} of {formatBytes(t.length)}
-              </span>
+              <span>{tr('dl.progress', { done: formatBytes(t.downloaded), total: formatBytes(t.length) })}</span>
             )}
-            {t.state === 'downloading' && <span>ETA {formatEta(t.timeRemaining)}</span>}
+            {t.state === 'downloading' && <span>{tr('dl.eta', { t: formatEta(t.timeRemaining) })}</span>}
             {active && (
               <span className="flex items-center gap-1">
                 <Users className="size-3" />
                 {t.numPeers}
               </span>
             )}
-            {t.source && <span className="text-faint">from {t.source.indexerName}</span>}
-            {t.error && <span className="truncate text-bad">{t.error}</span>}
+            {t.source && <span className="text-faint">{tr('dl.from', { name: t.source.indexerName })}</span>}
+            {t.error && <span className="truncate text-bad">{translateError(t.error)}</span>}
           </div>
         </div>
         <div className="w-[150px] text-right text-[12.5px] tabular-nums text-muted">
@@ -136,18 +135,18 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
         </div>
         <div className="flex items-center gap-0.5">
           {active ? (
-            <IconButton label="Pause" onClick={() => void run(api.pauseTorrent(t.infoHash))}>
+            <IconButton label={tr('dl.pause')} onClick={() => void run(api.pauseTorrent(t.infoHash))}>
               <Pause className="size-4" />
             </IconButton>
           ) : (
-            <IconButton label="Resume" onClick={() => void run(api.resumeTorrent(t.infoHash))}>
+            <IconButton label={tr('dl.resume')} onClick={() => void run(api.resumeTorrent(t.infoHash))}>
               <Play className="size-4" />
             </IconButton>
           )}
-          <IconButton label="Show in folder" onClick={() => void run(api.openTorrentFolder(t.infoHash))}>
+          <IconButton label={tr('dl.showFolder')} onClick={() => void run(api.openTorrentFolder(t.infoHash))}>
             <FolderOpen className="size-4" />
           </IconButton>
-          <IconButton label="Remove" onClick={onRemove} className="hover:!text-bad">
+          <IconButton label={tr('dl.remove')} onClick={onRemove} className="hover:!text-bad">
             <Trash2 className="size-4" />
           </IconButton>
         </div>
@@ -167,17 +166,17 @@ function RemoveDialog({ t, onClose }: { t: TorrentInfo; onClose: () => void }) {
   return (
     <div className="fixed inset-0 z-40 flex items-center justify-center bg-black/50 backdrop-blur-[2px]" onClick={onClose}>
       <div className="w-[440px] rounded-2xl border border-line bg-panel p-5 shadow-2xl" onClick={(e) => e.stopPropagation()}>
-        <div className="text-[15px] font-semibold">Remove torrent?</div>
+        <div className="text-[15px] font-semibold">{tr('dl.removeTitle')}</div>
         <div className="mt-1.5 truncate text-[13px] text-muted" title={t.name}>
           {t.name}
         </div>
         <label className="mt-4 flex cursor-pointer items-center gap-2.5 text-[13px]">
           <input type="checkbox" checked={deleteFiles} onChange={(e) => setDeleteFiles(e.target.checked)} className="size-4 accent-[var(--color-bad)]" />
-          Also delete downloaded files from disk
+          {tr('dl.deleteFiles')}
         </label>
         <div className="mt-5 flex justify-end gap-2">
           <Button variant="ghost" onClick={onClose}>
-            Cancel
+            {tr('common.cancel')}
           </Button>
           <Button
             variant="danger"
@@ -193,7 +192,7 @@ function RemoveDialog({ t, onClose }: { t: TorrentInfo; onClose: () => void }) {
               }
             }}
           >
-            {deleteFiles ? 'Remove and delete files' : 'Remove'}
+            {deleteFiles ? tr('dl.removeAndDelete') : tr('dl.remove')}
           </Button>
         </div>
       </div>

@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { AppWindow, ChevronRight, Globe, KeyRound, Lock, LogIn, LogOut, Search, Server, ShieldCheck } from 'lucide-react'
-import { categoryName } from '../../../core/categories'
+import { localCategoryName } from '../categories'
+import { t, tn, translateError, type Key } from '../i18n'
 import type { IndexerInfo, IndexerSettings, SettingsField } from '../../../shared/api'
 import { api } from '../api'
 import { cx } from '../format'
@@ -9,12 +10,12 @@ import { Badge, Button, EmptyState, Input, Toggle } from '../ui'
 
 type Filter = 'enabled' | 'public' | 'accounts' | 'problems' | 'all'
 
-const FILTERS: { id: Filter; label: string }[] = [
-  { id: 'enabled', label: 'Enabled' },
-  { id: 'public', label: 'Public' },
-  { id: 'accounts', label: 'With account' },
-  { id: 'problems', label: 'Problems' },
-  { id: 'all', label: 'All' },
+const FILTERS: { id: Filter; label: Key }[] = [
+  { id: 'enabled', label: 'tr.filter.enabled' },
+  { id: 'public', label: 'tr.filter.public' },
+  { id: 'accounts', label: 'tr.filter.accounts' },
+  { id: 'problems', label: 'tr.filter.problems' },
+  { id: 'all', label: 'tr.filter.all' },
 ]
 
 const matches = (i: IndexerInfo, f: Filter) =>
@@ -61,11 +62,11 @@ export function TrackersPage() {
   return (
     <div className="flex h-full flex-col">
       <div className="drag flex items-center gap-4 border-b border-line/70 px-6 pb-3 pt-3.5">
-        <h1 className="text-[17px] font-semibold">Trackers</h1>
+        <h1 className="text-[17px] font-semibold">{t('tr.title')}</h1>
         <div className="no-drag flex items-center gap-1 rounded-lg bg-panel p-0.5 text-[12.5px]">
           {FILTERS.map((f) => (
-            <button key={f.id} onClick={() => setFilter(f.id)} className={cx('rounded-md px-2.5 py-1', filter === f.id ? 'bg-hover text-fg' : 'text-muted hover:text-fg')}>
-              {f.label} <span className="tabular-nums text-faint">{counts[f.id]}</span>
+            <button key={f.id} onClick={() => setFilter(f.id)} className={cx('whitespace-nowrap rounded-md px-2.5 py-1', filter === f.id ? 'bg-hover text-fg' : 'text-muted hover:text-fg')}>
+              {t(f.label)} <span className="tabular-nums text-faint">{counts[f.id]}</span>
             </button>
           ))}
         </div>
@@ -74,7 +75,7 @@ export function TrackersPage() {
           onChange={(e) => setLang(e.target.value)}
           className="no-drag h-8 rounded-lg border border-line bg-panel px-2 text-[12.5px] text-muted outline-none"
         >
-          <option value="">All languages</option>
+          <option value="">{t('tr.allLanguages')}</option>
           {languages.map(([l, n]) => (
             <option key={l} value={l}>
               {l.toUpperCase()} ({n})
@@ -83,14 +84,14 @@ export function TrackersPage() {
         </select>
         <div className="no-drag relative mr-[140px] ml-auto w-64">
           <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-faint" />
-          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Filter trackers…" className="w-full pl-9" />
+          <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder={t('tr.filterPlaceholder')} className="w-full pl-9" />
         </div>
       </div>
 
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         {shown.length === 0 ? (
-          <EmptyState icon={<Server className="size-6" />} title="No trackers here">
-            {filter === 'problems' ? 'Every enabled tracker answered the last search.' : 'Try another filter.'}
+          <EmptyState icon={<Server className="size-6" />} title={t('tr.emptyTitle')}>
+            {filter === 'problems' ? t('tr.emptyProblems') : t('tr.emptyOther')}
           </EmptyState>
         ) : (
           shown.slice(0, 300).map((ix) => <TrackerRow key={ix.id} ix={ix} open={open === ix.id} onToggleOpen={() => setOpen(open === ix.id ? null : ix.id)} />)
@@ -102,12 +103,20 @@ export function TrackersPage() {
 
 function HealthDot({ ix }: { ix: IndexerInfo }) {
   const h = ix.health
-  if (!h) return <span className="text-[12px] text-faint">{ix.loginMethod && !ix.signedIn ? 'not signed in' : 'not checked'}</span>
+  if (!h) return <span className="text-[12px] text-faint">{ix.loginMethod && !ix.signedIn ? t('tr.health.notSignedIn') : t('tr.health.notChecked')}</span>
   const label =
-    h.state === 'done' ? `${h.count} results` : h.state === 'blocked' ? 'protected' : h.state === 'auth' ? 'sign in needed' : h.state === 'timeout' ? 'timeout' : 'error'
+    h.state === 'done'
+      ? tn('tr.health.results', h.count ?? 0)
+      : h.state === 'blocked'
+        ? t('tr.health.protected')
+        : h.state === 'auth'
+          ? t('tr.health.auth')
+          : h.state === 'timeout'
+            ? t('tr.health.timeout')
+            : t('tr.health.error')
   const color = h.state === 'done' ? ((h.count ?? 0) > 0 ? 'bg-good' : 'bg-faint') : h.state === 'error' ? 'bg-bad' : 'bg-warn'
   return (
-    <span className="flex items-center justify-end gap-1.5 text-[12px] text-muted" title={h.error}>
+    <span className="flex items-center justify-end gap-1.5 text-[12px] text-muted" title={h.error ? translateError(h.error) : undefined}>
       <span className={cx('size-1.5 rounded-full', color)} />
       {label}
     </span>
@@ -132,7 +141,7 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
   return (
     <div ref={ref} className={cx('rounded-xl', open && 'bg-panel')}>
       <div className="flex items-center gap-3 rounded-xl px-3 py-2.5 hover:bg-panel">
-        <Toggle checked={ix.enabled} disabled={!!ix.unsupported} label={`Enable ${ix.name}`} onChange={(v) => void toggle(v)} />
+        <Toggle checked={ix.enabled} disabled={!!ix.unsupported} label={t('tr.enable', { name: ix.name })} onChange={(v) => void toggle(v)} />
         <button className="flex min-w-0 flex-1 items-center gap-3 text-left" onClick={onToggleOpen}>
           <div className="min-w-0 flex-1">
             <div className="flex items-center gap-2">
@@ -141,22 +150,22 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
               {ix.type !== 'public' && (
                 <Badge tone="warn">
                   <Lock className="mr-1 size-2.5" />
-                  {ix.type}
+                  {t(`tr.type.${ix.type}` as Key) ?? ix.type}
                 </Badge>
               )}
               {ix.signedIn && (
                 <Badge tone="good">
                   <ShieldCheck className="mr-1 size-2.5" />
-                  signed in
+                  {t('tr.signedIn')}
                 </Badge>
               )}
             </div>
-            <div className="mt-0.5 truncate text-[12px] text-muted">{ix.unsupported ? `Not available yet: ${ix.unsupported}` : ix.description}</div>
+            <div className="mt-0.5 truncate text-[12px] text-muted">{ix.unsupported ? t('tr.unsupported', { reason: ix.unsupported }) : ix.description}</div>
           </div>
           <div className="hidden w-56 flex-wrap justify-end gap-x-2 lg:flex">
             {ix.categories.slice(0, 4).map((c) => (
               <span key={c} className="text-[11.5px] text-faint">
-                {categoryName(c)}
+                {localCategoryName(c)}
               </span>
             ))}
           </div>
@@ -175,12 +184,12 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
               {ix.siteLink}
             </button>
           </div>
-          {ix.health?.error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-[12.5px] text-bad selectable">{ix.health.error}</div>}
+          {ix.health?.error && <div className="rounded-lg border border-bad/30 bg-bad/10 px-3 py-2 text-[12.5px] text-bad selectable">{translateError(ix.health.error)}</div>}
           {ix.health?.state === 'blocked' && (
             <div className="flex items-center gap-3 rounded-lg border border-warn/30 bg-warn/10 px-3 py-2 text-[12.5px] text-warn">
-              <span className="flex-1">The site shows a Cloudflare / DDoS-Guard check. Open it once in the app's browser window; the pass is reused for searches.</span>
+              <span className="flex-1">{t('tr.blocked')}</span>
               <Button size="sm" icon={<AppWindow className="size-3.5" />} onClick={() => void passChallenge(ix.id, ix.name)}>
-                Open site
+                {t('tr.openSite')}
               </Button>
             </div>
           )}
@@ -197,7 +206,7 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
                   const info = await api.testIndexer(ix.id)
                   patchIndexer(info)
                   const h = info.health
-                  toast({ kind: h?.state === 'done' ? 'success' : 'error', text: `${ix.name}: ${h?.state === 'done' ? `${h.count} results` : (h?.error ?? h?.state)}` })
+                  toast({ kind: h?.state === 'done' ? 'success' : 'error', text: `${ix.name}: ${h?.state === 'done' ? tn('tr.health.results', h.count ?? 0) : translateError(h?.error ?? h?.state ?? '')}` })
                 } catch (e) {
                   toast({ kind: 'error', text: errorText(e) })
                 } finally {
@@ -205,11 +214,11 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
                 }
               }}
             >
-              Test
+              {t('tr.test')}
             </Button>
             {!ix.health || ix.health.state !== 'blocked' ? (
               <Button size="sm" variant="ghost" icon={<AppWindow className="size-3.5" />} onClick={() => void passChallenge(ix.id, ix.name)}>
-                Open in app browser
+                {t('tr.openInApp')}
               </Button>
             ) : null}
           </div>
@@ -230,7 +239,7 @@ function AccountSection({ ix }: { ix: IndexerInfo }) {
     try {
       const res = kind === 'form' ? await api.signIn(ix.id) : await api.signInWithBrowser(ix.id)
       patchIndexer(res.info)
-      toast(res.ok ? { kind: 'success', text: res.message ?? `Signed in to ${ix.name}` } : { kind: 'error', text: `${ix.name}: ${res.message}` })
+      toast(res.ok ? { kind: 'success', text: res.message ? translateError(res.message) : t('tr.account.ok', { name: ix.name }) } : { kind: 'error', text: `${ix.name}: ${translateError(res.message ?? '')}` })
     } catch (e) {
       toast({ kind: 'error', text: errorText(e) })
     } finally {
@@ -243,11 +252,10 @@ function AccountSection({ ix }: { ix: IndexerInfo }) {
       <KeyRound className="size-4 text-muted" />
       <div className="flex-1 text-[12.5px]">
         {ix.signedIn ? (
-          <span className="text-good">Signed in. The session is kept between launches.</span>
+          <span className="text-good">{t('tr.account.signedIn')}</span>
         ) : (
           <span className="text-muted">
-            This tracker needs an account.{' '}
-            {hasCredentials ? 'Save your username and password below, or sign in on the site itself.' : 'Sign in on the site itself; the session is reused for searches.'}
+            {t('tr.account.needs')} {hasCredentials ? t('tr.account.hintCredentials') : t('tr.account.hintBrowser')}
           </span>
         )}
       </div>
@@ -257,15 +265,15 @@ function AccountSection({ ix }: { ix: IndexerInfo }) {
           variant="primary"
           loading={busy === 'form'}
           disabled={!credentialsSaved}
-          title={credentialsSaved ? undefined : 'Save your username and password below first'}
+          title={credentialsSaved ? undefined : t('tr.account.saveFirst')}
           icon={<LogIn className="size-3.5" />}
           onClick={() => void run('form')}
         >
-          Sign in
+          {t('tr.account.signIn')}
         </Button>
       )}
       <Button size="sm" loading={busy === 'browser'} icon={<AppWindow className="size-3.5" />} onClick={() => void run('browser')}>
-        {ix.signedIn ? 'Open site' : 'Sign in in browser'}
+        {ix.signedIn ? t('tr.openSite') : t('tr.account.signInBrowser')}
       </Button>
       {ix.signedIn && (
         <Button
@@ -279,7 +287,7 @@ function AccountSection({ ix }: { ix: IndexerInfo }) {
             setBusy(null)
           }}
         >
-          Sign out
+          {t('tr.account.signOut')}
         </Button>
       )}
     </div>
@@ -315,12 +323,14 @@ function SettingsForm({ ix }: { ix: IndexerInfo }) {
   const set = (name: string, v: IndexerSettings[string]) => setValues({ ...values, [name]: v })
 
   const fields = ix.settings.filter((f) => !f.type?.startsWith('info'))
-  const labelOf = (f: SettingsField) => (f.name === 'cookie' ? 'Cookie (optional if you sign in in the browser)' : (f.label ?? f.name))
+  // Common credential fields get localized labels; the rest keep the definition's text
+  const KNOWN = ['username', 'password', 'cookie', 'apikey', 'passkey']
+  const labelOf = (f: SettingsField) => (KNOWN.includes(f.name) ? t(`tr.field.${f.name}` as Key) : (f.label ?? f.name))
 
   return (
     <div className="space-y-3">
       {ix.links.length > 1 && (
-        <Field label="Mirror">
+        <Field label={t('tr.mirror')}>
           <select
             value={String(values.sitelink ?? ix.links[0])}
             onChange={(e) => set('sitelink', e.target.value)}
@@ -380,13 +390,13 @@ function SettingsForm({ ix }: { ix: IndexerInfo }) {
           onClick={async () => {
             try {
               patchIndexer(await api.updateIndexerSettings(ix.id, values))
-              toast({ kind: 'success', text: `${ix.name} settings saved` })
+              toast({ kind: 'success', text: t('tr.saved', { name: ix.name }) })
             } catch (e) {
               toast({ kind: 'error', text: errorText(e) })
             }
           }}
         >
-          Save settings
+          {t('tr.save')}
         </Button>
       )}
     </div>

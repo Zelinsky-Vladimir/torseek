@@ -3,6 +3,7 @@ import type { IndexerSettings } from '../core/cardigann/indexer'
 import type { SettingsField } from '../core/cardigann/types'
 import type { Release } from '../core/release'
 import type { IndexerStatus } from '../core/search'
+import type { LangSetting } from './i18n'
 
 export type { Release, IndexerStatus, IndexerSettings, SettingsField }
 
@@ -75,6 +76,8 @@ export interface TorrentFileInfo {
 }
 
 export interface AppSettings {
+  /** UI language; 'auto' follows the system */
+  language: LangSetting
   downloadDir: string
   searchConcurrency: number
   searchTimeoutSec: number

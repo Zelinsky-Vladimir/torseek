@@ -7,11 +7,14 @@ import { SearchPage } from './pages/SearchPage'
 import { SettingsPage } from './pages/SettingsPage'
 import { TrackersPage } from './pages/TrackersPage'
 import { useStore, type Page } from './store'
+import { t, t as tr } from './i18n'
 
 export function App() {
   const page = useStore((s) => s.page)
+  // Remount on language change so every t() call re-runs
+  const lang = useStore((s) => s.lang)
   return (
-    <div className="flex h-full">
+    <div key={lang} className="flex h-full">
       <Sidebar />
       <main className="min-w-0 flex-1 bg-bg">
         {page === 'search' && <SearchPage />}
@@ -42,16 +45,16 @@ function Sidebar() {
       </div>
       <nav className="no-drag space-y-0.5">
         <NavItem page="search" current={page} onClick={setPage} icon={<Search className="size-4" />}>
-          Search
+          {t('nav.search')}
         </NavItem>
         <NavItem page="downloads" current={page} onClick={setPage} icon={<Download className="size-4" />} badge={active || undefined}>
-          Downloads
+          {t('nav.downloads')}
         </NavItem>
         <NavItem page="trackers" current={page} onClick={setPage} icon={<Server className="size-4" />} hint={String(enabled)}>
-          Trackers
+          {t('nav.trackers')}
         </NavItem>
         <NavItem page="settings" current={page} onClick={setPage} icon={<Settings className="size-4" />}>
-          Settings
+          {t('nav.settings')}
         </NavItem>
       </nav>
       <div className="mt-auto space-y-1 rounded-lg px-2 py-2 text-[12px] tabular-nums text-muted">
@@ -127,7 +130,7 @@ function Toasts() {
               {t.action.label}
             </button>
           )}
-          <button className="shrink-0 text-faint hover:text-fg" onClick={() => dismissToast(t.id)} aria-label="Dismiss">
+          <button className="shrink-0 text-faint hover:text-fg" onClick={() => dismissToast(t.id)} aria-label={tr('common.dismiss')}>
             <X className="size-4" />
           </button>
         </div>

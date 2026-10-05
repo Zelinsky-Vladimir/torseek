@@ -6,14 +6,15 @@ import { CATEGORY_CHIPS, categoryLabel, isAdult } from '../categories'
 import { cx, formatAge, formatBytes, formatCount } from '../format'
 import { grabStateOf, recentQueries, useStore } from '../store'
 import { Badge, Chip, EmptyState, IconButton } from '../ui'
+import { t, tn, translateError, type Key } from '../i18n'
 
 type SortKey = 'seeders' | 'newest' | 'size-desc' | 'size-asc' | 'name'
-const SORTS: { id: SortKey; label: string }[] = [
-  { id: 'seeders', label: 'Most seeded' },
-  { id: 'newest', label: 'Newest' },
-  { id: 'size-desc', label: 'Largest' },
-  { id: 'size-asc', label: 'Smallest' },
-  { id: 'name', label: 'Name' },
+const SORTS: { id: SortKey; label: Key }[] = [
+  { id: 'seeders', label: 'search.sort.seeders' },
+  { id: 'newest', label: 'search.sort.newest' },
+  { id: 'size-desc', label: 'search.sort.sizeDesc' },
+  { id: 'size-asc', label: 'search.sort.sizeAsc' },
+  { id: 'name', label: 'search.sort.name' },
 ]
 const RESOLUTIONS = ['2160p', '1080p', '720p', '480p'] as const
 const PAGE = 150
@@ -90,12 +91,12 @@ export function SearchPage() {
             value={query}
             onChange={(e) => setQuery(e.target.value)}
             onKeyDown={(e) => e.key === 'Escape' && (running ? cancelSearch() : setQuery(''))}
-            placeholder={`Search ${enabledCount} trackers…`}
+            placeholder={t('search.placeholder', { n: enabledCount })}
             className="selectable h-11 w-full rounded-xl border border-line bg-panel pl-11 pr-28 text-[15px] outline-none transition-colors placeholder:text-faint focus:border-accent/70 focus:bg-panel-2"
           />
           <div className="absolute right-2 top-1/2 flex -translate-y-1/2 items-center gap-1">
             {query && (
-              <IconButton type="button" label="Clear" onClick={() => setQuery('')} className="size-7">
+              <IconButton type="button" label={t('common.clear')} onClick={() => setQuery('')} className="size-7">
                 <X className="size-4" />
               </IconButton>
             )}
@@ -105,7 +106,7 @@ export function SearchPage() {
 
         <div className="no-drag mt-3 flex flex-wrap items-center gap-1.5">
           <Chip active={chips.length === 0} onClick={() => setChips([])} count={hasSearched ? groups.length : undefined}>
-            All
+            {t('search.all')}
           </Chip>
           {visibleChips.map((c) => (
             <Chip
@@ -114,7 +115,7 @@ export function SearchPage() {
               count={hasSearched ? (chipCounts[c.id] ?? 0) : undefined}
               onClick={() => setChips(chips.includes(c.id) ? chips.filter((x) => x !== c.id) : [...chips, c.id])}
             >
-              {c.label}
+              {t(c.label)}
             </Chip>
           ))}
         </div>
@@ -125,8 +126,8 @@ export function SearchPage() {
       {hasSearched && (
         <div className="flex items-center gap-4 border-b border-line/70 px-6 py-2 text-[12.5px] text-muted">
           <span className="tabular-nums">
-            <span className="font-semibold text-fg">{filtered.length}</span> results
-            {filtered.length !== groups.length && <span className="text-faint"> of {groups.length}</span>}
+            <span className="text-fg">{tn('search.results', filtered.length)}</span>
+            {filtered.length !== groups.length && <span className="text-faint"> {t('search.ofTotal', { n: groups.length })}</span>}
           </span>
           <div className="h-4 w-px bg-line" />
           <div className="flex items-center gap-1">
@@ -142,21 +143,21 @@ export function SearchPage() {
           </div>
           <div className="h-4 w-px bg-line" />
           <label className="flex items-center gap-2">
-            Min seeds
+            {t('search.minSeeds')}
             <select value={minSeeds} onChange={(e) => setMinSeeds(Number(e.target.value))} className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none">
               {[0, 1, 5, 20, 100].map((n) => (
                 <option key={n} value={n}>
-                  {n === 0 ? 'Any' : `${n}+`}
+                  {n === 0 ? t('search.any') : `${n}+`}
                 </option>
               ))}
             </select>
           </label>
           <div className="ml-auto flex items-center gap-2">
-            Sort
+            {t('search.sort')}
             <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none">
               {SORTS.map((s) => (
                 <option key={s.id} value={s.id}>
-                  {s.label}
+                  {t(s.label)}
                 </option>
               ))}
             </select>
@@ -174,17 +175,17 @@ export function SearchPage() {
           running ? (
             <ResultSkeleton />
           ) : (
-            <EmptyState icon={<Search className="size-6" />} title="Nothing found">
-              Try a shorter query, the original title, or enable more trackers.
+            <EmptyState icon={<Search className="size-6" />} title={t('search.nothing')}>
+              {t('search.nothingHint')}
             </EmptyState>
           )
         ) : (
           <div className="px-3 py-2">
             <div className="grid grid-cols-[minmax(0,1fr)_88px_96px_56px_112px] gap-x-3 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">
-              <div>Name</div>
-              <div className="text-right">Size</div>
-              <div className="text-right">Seeds / Peers</div>
-              <div className="text-right">Age</div>
+              <div>{t('search.col.name')}</div>
+              <div className="text-right">{t('search.col.size')}</div>
+              <div className="text-right">{t('search.col.seeds')}</div>
+              <div className="text-right">{t('search.col.age')}</div>
               <div />
             </div>
             {filtered.slice(0, limit).map((g) => (
@@ -193,7 +194,7 @@ export function SearchPage() {
             {filtered.length > limit && (
               <div className="flex justify-center py-4">
                 <button onClick={() => setLimit(limit + PAGE)} className="rounded-lg border border-line px-4 py-2 text-[13px] text-muted hover:bg-hover hover:text-fg">
-                  Show {Math.min(PAGE, filtered.length - limit)} more
+                  {t('search.showMore', { n: Math.min(PAGE, filtered.length - limit) })}
                 </button>
               </div>
             )}
@@ -224,12 +225,13 @@ function ResultRow({ group }: { group: ReleaseGroup }) {
           {q.hdr && <Badge tone="warn">{q.hdr}</Badge>}
           {q.source && <Badge tone={q.source === 'CAM' ? 'bad' : 'neutral'}>{q.source}</Badge>}
           {q.codec && <Badge>{q.codec}</Badge>}
-          {freeleech && <Badge tone="good">FREE</Badge>}
+          {freeleech && <Badge tone="good">{t('search.free')}</Badge>}
           <span className="truncate">
             <span className="text-fg/80">{r.indexerName}</span>
             {others.length > 0 && (
               <span className="text-faint" title={others.map((o) => o.indexerName).join(', ')}>
-                {' '}+{others.length} more
+                {' '}
+                {t('search.moreSources', { n: others.length })}
               </span>
             )}
             {cat && <span className="text-faint"> · {cat}</span>}
@@ -246,17 +248,17 @@ function ResultRow({ group }: { group: ReleaseGroup }) {
       </div>
       <div className="flex items-center justify-end gap-0.5">
         {r.details && (
-          <IconButton label="Open tracker page" onClick={() => void window.open(r.details, '_blank')} className="opacity-0 group-hover:opacity-100">
+          <IconButton label={t('search.openDetails')} onClick={() => void window.open(r.details, '_blank')} className="opacity-0 group-hover:opacity-100">
             <ExternalLink className="size-4" />
           </IconButton>
         )}
-        <IconButton label="Copy magnet link" onClick={() => void copyMagnet(r)} className="opacity-0 group-hover:opacity-100">
+        <IconButton label={t('search.copyMagnet')} onClick={() => void copyMagnet(r)} className="opacity-0 group-hover:opacity-100">
           <Magnet className="size-4" />
         </IconButton>
         <button
           onClick={() => void grab(r)}
           disabled={state === 'loading'}
-          title="Download"
+          title={t('search.download')}
           className={cx(
             'inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
             state === 'done' ? 'bg-good/15 text-good' : state === 'error' ? 'bg-bad/15 text-bad hover:bg-bad/25' : 'bg-accent/15 text-accent hover:bg-accent-2 hover:text-white',
@@ -298,25 +300,21 @@ function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<str
         </div>
         <button onClick={() => setOpen(!open)} className="flex items-center gap-1.5 text-muted hover:text-fg">
           {running ? (
-            <span>
-              Searching <span className="tabular-nums text-fg">{finished}</span>/{list.length} trackers
-            </span>
+            <span className="tabular-nums">{t('search.progress.running', { done: finished, total: list.length })}</span>
           ) : (
-            <span>
-              Results from <span className="tabular-nums text-fg">{withResults}</span> of {list.length} trackers
-            </span>
+            <span className="tabular-nums">{t('search.progress.done', { done: withResults, total: list.length })}</span>
           )}
           {problems > 0 && (
             <span className="flex items-center gap-1 text-warn">
               <ShieldAlert className="size-3.5" />
-              {problems} unavailable
+              {tn('search.progress.problems', problems)}
             </span>
           )}
           <ChevronDown className={cx('size-3.5 transition-transform', open && 'rotate-180')} />
         </button>
         {running && (
           <button onClick={onCancel} className="ml-auto text-muted hover:text-fg">
-            Stop
+            {t('search.stop')}
           </button>
         )}
       </div>
@@ -331,10 +329,14 @@ function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<str
                 onClick={() => (s.state === 'blocked' ? void passChallenge(s.indexerId, s.indexerName) : openTracker(s.indexerId))}
                 title={
                   s.state === 'blocked'
-                    ? 'Protected by Cloudflare / DDoS-Guard. Click to open the site and pass the check'
+                    ? t('search.chip.blockedHint')
                     : s.state === 'auth'
-                      ? `${s.error ?? 'Sign-in required'}. Click to open the tracker's account settings`
-                      : (s.error ?? (s.state === 'timeout' ? 'Took too long' : undefined))
+                      ? t('search.chip.authHint', { reason: translateError(s.error ?? t('search.chip.signInRequired')) })
+                      : s.error
+                        ? translateError(s.error)
+                        : s.state === 'timeout'
+                          ? t('search.chip.timeoutHint')
+                          : undefined
                 }
                 className={cx(
                   'inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-2 py-0.5 text-[12px]',
@@ -345,7 +347,7 @@ function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<str
                 {s.state === 'running' && <Loader2 className="size-3 animate-spin" />}
                 {s.indexerName}
                 <span className="tabular-nums text-faint">
-                  {s.state === 'done' ? s.count : s.state === 'running' || s.state === 'queued' ? '' : s.state === 'auth' ? 'sign in' : s.state === 'blocked' ? 'unlock' : s.state}
+                  {s.state === 'done' ? s.count : s.state === 'running' || s.state === 'queued' ? '' : s.state === 'auth' ? t('search.chip.signIn') : s.state === 'blocked' ? t('search.chip.unlock') : s.state === 'timeout' ? t('search.chip.timeout') : t('search.chip.error')}
                 </span>
               </button>
             )
@@ -381,14 +383,13 @@ function Welcome({ enabledCount, onPick }: { enabledCount: number; onPick: (q: s
       <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent-2 text-white shadow-lg shadow-accent/20">
         <Sparkles className="size-6" />
       </div>
-      <h1 className="mt-5 text-[22px] font-semibold tracking-tight">Search every tracker at once</h1>
+      <h1 className="mt-5 text-[22px] font-semibold tracking-tight">{t('search.welcome.title')}</h1>
       <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
-        One query goes to {enabledCount} trackers in parallel. Results stream in as each site answers, duplicates are merged, and downloads
-        start right here.
+        {t('search.welcome.text', { n: enabledCount })}
       </p>
       {recent.length > 0 && (
         <div className="mt-8 w-full">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">Recent</div>
+          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">{t('search.recent')}</div>
           <div className="flex flex-wrap justify-center gap-1.5">
             {recent.map((q) => (
               <Chip key={q} onClick={() => onPick(q)}>

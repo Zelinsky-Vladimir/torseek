@@ -22,6 +22,10 @@ function convertPattern(pattern: string): Converted {
   let out = ''
   let inClass = false
   let prevWasClassEscape = false
+  // Where the current class starts in `out`, and whether it contained W (see below)
+  let classStart = 0
+  let classNegated = false
+  let classNotWord = false
 
   for (let i = 0; i < pattern.length; i++) {
     const c = pattern[i]
@@ -34,7 +38,11 @@ function convertPattern(pattern: string): Converted {
         continue
       }
       if (inClass) {
-        if (n === 'w') {
+        if (n === 'W') {
+          // Unicode "non-word" can't be written inside a JS class; rewritten when the class closes
+          classNotWord = true
+          prevWasClassEscape = true
+        } else if (n === 'w') {
           out += WORD
           prevWasClassEscape = true
         } else if (CLASS_ESCAPES.has(n)) {
@@ -92,7 +100,13 @@ function convertPattern(pattern: string): Converted {
     if (inClass) {
       if (c === ']') {
         inClass = false
-        out += c
+        if (classNotWord) {
+          // [abcW] -> (?:[abc]|[^WORD]);  [^abcW] -> (?:(?![abc])[WORD])
+          const body = out.slice(classStart + 1 + (classNegated ? 1 : 0))
+          out = out.slice(0, classStart)
+          if (classNegated) out += body ? `(?:(?![${body}])[${WORD}])` : `[${WORD}]`
+          else out += body ? `(?:[${body}]|[^${WORD}])` : `[^${WORD}]`
+        } else out += c
       } else if (c === '-' && prevWasClassEscape && pattern[i + 1] !== ']') {
         out += '\\-'
       } else if (c === '[' || c === '{' || c === '}' || c === '(' || c === ')' || c === '|' || c === '/') {
@@ -106,6 +120,9 @@ function convertPattern(pattern: string): Converted {
 
     if (c === '[') {
       inClass = true
+      classStart = out.length
+      classNegated = pattern[i + 1] === '^'
+      classNotWord = false
       out += c
       // `[]...]` and `[^]...]` treat the first `]` as a literal in .NET
       if (pattern[i + 1] === '^') {

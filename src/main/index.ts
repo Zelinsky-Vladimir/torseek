@@ -5,13 +5,14 @@ import { app, BrowserWindow, dialog, ipcMain, safeStorage, shell, type WebConten
 import { HttpClient } from '../core/http'
 import type { Api, ApiMethod, AppSettings, Release, SearchEvent } from '../shared/api'
 import { IPC } from '../shared/api'
-import { IndexerManager, type IndexerStoreShape } from './indexers'
+import { IndexerManager, type IndexerStoreShape, type WindowText } from './indexers'
 import { JsonStore } from './store'
 import { TorrentManager, type TorrentStoreShape } from './torrents'
 import { browserUserAgent, electronFetch, sessionCookieStore, trackerSession } from './net'
 import { openSiteWindow } from './site-window'
 import { DefinitionsUpdater } from './definitions-updater'
 import type { DefinitionsStatus } from '../shared/api'
+import { resolveLanguage, translator } from '../shared/i18n'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const log = (msg: string) => console.log(`[torseek] ${msg}`)
@@ -250,6 +251,7 @@ app.on('second-instance', (_e, argv) => {
 app.whenReady().then(async () => {
   store = new JsonStore<StoreShape>(join(app.getPath('userData'), 'torseek.json'), {
     settings: {
+      language: (process.env.TORSEEK_LANG as AppSettings['language'] | undefined) ?? 'auto',
       downloadDir: join(app.getPath('downloads'), 'Torseek'),
       searchConcurrency: 12,
       searchTimeoutSec: 25,
@@ -270,7 +272,11 @@ app.whenReady().then(async () => {
     seal: (s: string) => (safeStorage.isEncryptionAvailable() ? 'enc:' + safeStorage.encryptString(s).toString('base64') : s),
     open: (s: string) => (s.startsWith('enc:') ? safeStorage.decryptString(Buffer.from(s.slice(4), 'base64')) : s),
   }
-  indexers = new IndexerManager(definitionDirs(), http, store, (o) => openSiteWindow({ ...o, parent: mainWindow }), log, secrets)
+  const windowText: WindowText = (key, name) => {
+    const lang = resolveLanguage(settings().language, [app.getLocale(), ...app.getPreferredSystemLanguages()])
+    return translator(lang).t(`win.${key}`, { name })
+  }
+  indexers = new IndexerManager(definitionDirs(), http, store, (o) => openSiteWindow({ ...o, parent: mainWindow }), log, secrets, windowText)
   await indexers.load()
 
   torrents = new TorrentManager(store, join(app.getPath('userData'), 'torrents'), { seedAfterDownload: () => settings().seedAfterDownload }, log)

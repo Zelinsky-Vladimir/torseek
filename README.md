@@ -50,6 +50,23 @@ npm run sync-definitions      # pull latest definitions from Jackett on GitHub
 node scripts/e2e-smoke.mjs "ubuntu 26.04"    # drive the built app: search -> download
 ```
 
+## Languages
+
+The UI ships in 13 languages: English, Русский, Українська, Español, Português, Français, Deutsch,
+Italiano, Polski, Türkçe, 简体中文, 日本語, 한국어. The system language is picked automatically and can be
+changed in Settings. Dictionaries live in `src/shared/i18n/` (one file per language, `en.ts` is the
+source); TypeScript fails the build if a key is missing, and `test/i18n.test.ts` checks placeholders
+and plural forms. To add a language: copy `en.ts`, translate, register it in `src/shared/i18n/index.ts`.
+Right-to-left languages (Arabic, Hebrew) need layout work first.
+
+## CI and releases
+
+- **CI** (`.github/workflows/ci.yml`): every push to `main` and every PR runs typecheck, tests and a build,
+  then packages installers for Windows (NSIS), macOS (dmg, arm64 + x64) and Linux (AppImage) as artifacts.
+- **Release** (`.github/workflows/release.yml`): bump `version` in `package.json`, then
+  `git tag v0.2.0 && git push origin v0.2.0`. All three installers are built and attached to a GitHub Release.
+  Builds are unsigned for now (SmartScreen / Gatekeeper will warn).
+
 ## Status (v0.2)
 
 Works:
