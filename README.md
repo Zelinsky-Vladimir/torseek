@@ -50,7 +50,7 @@ npm run dist                  # Windows installer into dist/
 node scripts/e2e-trackers.mjs dune --open 1337x   # all public trackers + open a protected site
 npm run sync-definitions      # pull latest definitions from Jackett on GitHub
 node scripts/e2e-smoke.mjs "ubuntu 26.04"    # drive the built app: search -> download
-node scripts/e2e-client.mjs     # file selection, streaming, player, tray (legal test torrent)
+node scripts/e2e-client.mjs     # file selection, tray (legal test torrent)
 node scripts/e2e-library.mjs    # title card, favorites, watch, history
 node scripts/e2e-torznab.mjs    # Torznab API the way Sonarr calls it
 ```
@@ -80,6 +80,8 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
   hand-written **Knaben, Torrents.csv, SubsPlease, Anilibria, AudioBook Bay**
 - **search in other languages**: type «дюна» and English trackers also get "Dune", Chinese ones "沙丘" (titles from Wikidata)
 - streaming results, duplicates merged across trackers, quality badges, category / quality / seed filters
+- **audio language filter** (English / Russian / Ukrainian, read from release names) and loose matches tucked away
+- trackers checked daily: working ones in your languages switched on, dead ones off
 - **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
 - **favorites**, **search history**, **watched searches**: re-checked in the background, notification on new releases
 
@@ -87,7 +89,8 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 - Cloudflare / DDoS-Guard: Chromium network stack in one shared session; open the site once in the app's window
 
 **Client**
-- choose files in a torrent, **play video/audio while it downloads**, open finished files
+- choose files in a torrent, open finished files, ask where to save (or always use one folder)
+- a list of live public trackers is added to every torrent, so magnets with dead trackers still start
 - tray icon, keeps downloading when the window is closed, notifications, start with the OS, magnet link handler
 - speed limits, seeding toggle, resume after restart
 

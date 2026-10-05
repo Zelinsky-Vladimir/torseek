@@ -27,6 +27,7 @@ import { randomBytes } from 'node:crypto'
 const here = fileURLToPath(new URL('.', import.meta.url))
 const log = (msg: string) => console.log(`[torseek] ${msg}`)
 
+
 interface StoreShape extends IndexerStoreShape, TorrentStoreShape {
   settings: AppSettings
   /** One-time hints already shown */
@@ -76,6 +77,28 @@ function showWindow(page?: NavigateTarget) {
   if (mainWindow!.isMinimized()) mainWindow!.restore()
   mainWindow!.focus()
   if (page) sendToUi(IPC.navigate, page)
+}
+
+let progressTimer: ReturnType<typeof setTimeout> | undefined
+async function checkTrackers() {
+  const s = settings()
+  await indexers.checkAll(s.searchLanguages, {
+    manage: s.autoManageTrackers,
+    adult: s.showAdult,
+    concurrency: Math.max(4, Math.floor(s.searchConcurrency / 2)),
+    // The tracker list re-renders on each event; one per second is plenty
+    onProgress: () => {
+      if (!indexers.checkStatus.running) {
+        clearTimeout(progressTimer)
+        progressTimer = undefined
+        return sendToUi(IPC.indexersChanged)
+      }
+      progressTimer ??= setTimeout(() => {
+        progressTimer = undefined
+        sendToUi(IPC.indexersChanged)
+      }, 1000)
+    },
+  })
 }
 
 async function updateDefinitions(): Promise<DefinitionsStatus> {
@@ -250,10 +273,17 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     async passChallenge(id) {
       return indexers.passChallenge(id)
     },
+    async checkTrackers() {
+      void checkTrackers()
+      return indexers.checkStatus
+    },
+    async trackerCheckStatus() {
+      return { ...indexers.checkStatus, checkedAt: indexers.checkStatus.checkedAt ?? (indexers.lastCheckedAt() || undefined) }
+    },
 
-    async download(release) {
+    async download(release, path) {
       const target = await resolveRelease(release)
-      const res = await torrents.add(target, settings().downloadDir, { indexerName: release.indexerName, details: release.details })
+      const res = await torrents.add(target, useDir(path), { indexerName: release.indexerName, details: release.details }, release.title)
       refreshTray()
       return res
     },
@@ -263,8 +293,10 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       if (target.kind === 'magnet') return target.uri
       throw new Error('This tracker only provides .torrent files')
     },
-    async addMagnet(uri) {
-      return torrents.addMagnet(uri.trim(), settings().downloadDir)
+    async addMagnet(uri, path) {
+      const res = await torrents.addMagnet(uri.trim(), useDir(path))
+      refreshTray()
+      return res
     },
     async listTorrents() {
       return torrents.snapshot()
@@ -294,9 +326,6 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     async setFileSelection(infoHash, selected) {
       await torrents.setFileSelection(infoHash, selected)
     },
-    async streamUrl(infoHash, index) {
-      return torrents.streamUrl(infoHash, index)
-    },
 
     async getSettings() {
       return settings()
@@ -319,6 +348,10 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       if (res.canceled || !res.filePaths[0]) return null
       store.update((d) => (d.settings.downloadDir = res.filePaths[0]))
       return res.filePaths[0]
+    },
+    async chooseFolder(defaultPath) {
+      const res = await dialog.showOpenDialog(mainWindow!, { defaultPath: defaultPath ?? settings().downloadDir, properties: ['openDirectory', 'createDirectory'] })
+      return res.canceled ? null : (res.filePaths[0] ?? null)
     },
     async openExternal(url) {
       await safeExternal(url)
@@ -474,9 +507,26 @@ function createWindow(show = true) {
   else void mainWindow.loadFile(join(here, '../renderer/index.html'))
 }
 
+/** The folder for a download; a chosen one goes to the top of the recent list */
+function useDir(path?: string): string {
+  if (!path || path === settings().downloadDir) return settings().downloadDir
+  store.update((d) => {
+    d.settings.recentDirs = [path, ...(d.settings.recentDirs ?? []).filter((p) => p !== path)].slice(0, 5)
+  })
+  return path
+}
+
 function handleMagnetArgs(argv: string[]) {
   const magnet = argv.find((a) => a.startsWith('magnet:'))
   if (!magnet) return
+  if (settings().askWhereToSave && mainWindow && !mainWindow.isDestroyed()) {
+    showWindow('downloads')
+    const name = new URLSearchParams(magnet.split('?')[1] ?? '').get('dn') || magnet.slice(0, 60)
+    const send = () => sendToUi(IPC.askSave, { magnet, name })
+    if (mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', () => setTimeout(send, 500))
+    else send()
+    return
+  }
   void torrents
     .addMagnet(magnet, settings().downloadDir)
     .then(() => {
@@ -501,6 +551,10 @@ app.whenReady().then(async () => {
   const defaultSettings: AppSettings = {
     language: (process.env.TORSEEK_LANG as AppSettings['language'] | undefined) ?? 'auto',
     downloadDir: join(app.getPath('downloads'), 'Torseek'),
+    askWhereToSave: true,
+    searchLanguages: [],
+    autoManageTrackers: true,
+    recentDirs: [],
     searchConcurrency: 12,
     searchTimeoutSec: 25,
     seedAfterDownload: true,
@@ -557,6 +611,14 @@ app.whenReady().then(async () => {
   const automation = !!process.env.TORSEEK_NO_UPDATE
   // Refresh definitions in the background at most once a day
   if (Date.now() - defStatus.checkedAt > 24 * 3600_000 && !automation) setTimeout(() => void updateDefinitions(), 5000)
+  // Daily tracker check, once the user has said which languages they search in
+  const dailyCheck = () => {
+    if (settings().searchLanguages.length && Date.now() - indexers.lastCheckedAt() > 24 * 3600_000) void checkTrackers()
+  }
+  if (!automation) {
+    setTimeout(dailyCheck, 60_000)
+    setInterval(dailyCheck, 3600_000)
+  }
 
   library = new Library(join(app.getPath('userData'), 'library.db'))
   watcher = new Watcher(

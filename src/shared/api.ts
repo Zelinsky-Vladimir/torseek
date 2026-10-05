@@ -81,14 +81,20 @@ export interface TorrentFileInfo {
   progress: number
   /** Included in the download */
   selected: boolean
-  /** Video/audio the built-in player can try */
-  playable: boolean
 }
 
 export interface AppSettings {
   /** UI language; 'auto' follows the system */
   language: LangSetting
   downloadDir: string
+  /** Languages the user searches in (tracker languages, "en", "ru"…); empty until chosen */
+  searchLanguages: string[]
+  /** Daily background check switches working trackers on and dead ones off */
+  autoManageTrackers: boolean
+  /** Ask for a folder on every download (the default folder is preselected) */
+  askWhereToSave: boolean
+  /** Folders picked lately, newest first */
+  recentDirs: string[]
   searchConcurrency: number
   searchTimeoutSec: number
   seedAfterDownload: boolean
@@ -113,6 +119,13 @@ export interface AppSettings {
   torznabEnabled: boolean
   torznabPort: number
   torznabApiKey: string
+}
+
+export interface TrackerCheckStatus {
+  running: boolean
+  checkedAt?: number
+  done: number
+  total: number
 }
 
 export interface TorznabStatus {
@@ -195,10 +208,14 @@ export interface Api {
   testIndexer(id: string): Promise<IndexerInfo>
   /** Open the site so a Cloudflare / DDoS-Guard check can complete */
   passChallenge(id: string): Promise<ChallengeResult>
+  /** Test every tracker in the background (progress via onIndexersChanged) */
+  checkTrackers(): Promise<TrackerCheckStatus>
+  trackerCheckStatus(): Promise<TrackerCheckStatus>
 
-  download(release: Release): Promise<{ infoHash: string }>
+  /** path: folder for this download; the default folder when omitted */
+  download(release: Release, path?: string): Promise<{ infoHash: string }>
   getMagnet(release: Release): Promise<string>
-  addMagnet(uri: string): Promise<{ infoHash: string }>
+  addMagnet(uri: string, path?: string): Promise<{ infoHash: string }>
   listTorrents(): Promise<TorrentInfo[]>
   torrentFiles(infoHash: string): Promise<TorrentFileInfo[]>
   onTorrents(cb: (torrents: TorrentInfo[]) => void): () => void
@@ -208,12 +225,14 @@ export interface Api {
   openTorrentFolder(infoHash: string): Promise<void>
   openTorrentFile(infoHash: string, index: number): Promise<void>
   setFileSelection(infoHash: string, selected: number[]): Promise<void>
-  /** http://127.0.0.1 URL streaming the file while it downloads */
-  streamUrl(infoHash: string, index: number): Promise<string>
 
   getSettings(): Promise<AppSettings>
   updateSettings(patch: Partial<AppSettings>): Promise<AppSettings>
   chooseDownloadDir(): Promise<string | null>
+  /** Folder picker that doesn't touch the settings */
+  chooseFolder(defaultPath?: string): Promise<string | null>
+  /** A magnet opened from outside (browser) while "ask where to save" is on */
+  onAskSave(cb: (req: { magnet: string; name: string }) => void): () => void
   definitionsStatus(): Promise<DefinitionsStatus>
   /** Pull the latest tracker definitions from the Jackett repo and reload trackers */
   updateDefinitions(): Promise<DefinitionsStatus>
@@ -260,7 +279,8 @@ export const IPC = {
   updateStatus: 'api:update-status',
   navigate: 'api:navigate',
   libraryChanged: 'api:library-changed',
+  askSave: 'api:ask-save',
 } as const
 
-export type ApiEvent = 'onSearchEvent' | 'onTorrents' | 'onIndexersChanged' | 'onUpdateStatus' | 'onNavigate' | 'onLibraryChanged'
+export type ApiEvent = 'onSearchEvent' | 'onTorrents' | 'onIndexersChanged' | 'onUpdateStatus' | 'onNavigate' | 'onLibraryChanged' | 'onAskSave'
 export type ApiMethod = Exclude<keyof Api, ApiEvent>

@@ -9,6 +9,8 @@ import { SettingsPage } from './pages/SettingsPage'
 import { TrackersPage } from './pages/TrackersPage'
 import { useStore, type Page } from './store'
 import { t, t as tr } from './i18n'
+import { SaveDialog } from './components/SaveDialog'
+import { LanguageSetup } from './components/TrackerLanguages'
 
 export function App() {
   const page = useStore((s) => s.page)
@@ -24,6 +26,8 @@ export function App() {
         {page === 'trackers' && <TrackersPage />}
         {page === 'settings' && <SettingsPage />}
       </main>
+      <SaveDialog />
+      <LanguageSetup />
       <Toasts />
     </div>
   )

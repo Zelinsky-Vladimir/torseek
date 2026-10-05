@@ -33,7 +33,7 @@ function createMockApi(): Api {
     health: i === 4 ? { state: 'blocked', at: Date.now() } : i === 7 ? { state: 'error', error: 'fetch failed (ECONNRESET)', at: Date.now() } : undefined,
   }))
 
-  let settings: AppSettings = { torznabEnabled: false, torznabPort: 9118, torznabApiKey: '0123456789abcdef0123456789abcdef', showTitleInfo: true, searchOtherLanguages: true, theme: 'system', accent: 'violet', watchIntervalHours: 6, closeToTray: true, notifyOnComplete: true, openAtLogin: false, language: 'auto', downloadDir: 'C:\\Users\\me\\Downloads\\Torseek', searchConcurrency: 12, searchTimeoutSec: 25, seedAfterDownload: true, showAdult: false, downloadLimit: 0, uploadLimit: 0 }
+  let settings: AppSettings = { torznabEnabled: false, torznabPort: 9118, torznabApiKey: '0123456789abcdef0123456789abcdef', showTitleInfo: true, searchOtherLanguages: true, theme: 'system', accent: 'violet', watchIntervalHours: 6, closeToTray: true, notifyOnComplete: true, openAtLogin: false, language: 'auto', askWhereToSave: true, searchLanguages: [], autoManageTrackers: true, recentDirs: ['D:\Movies'], downloadDir: 'C:\\Users\\me\\Downloads\\Torseek', searchConcurrency: 12, searchTimeoutSec: 25, seedAfterDownload: true, showAdult: false, downloadLimit: 0, uploadLimit: 0 }
   const torrents: TorrentInfo[] = [
     { infoHash: 'a'.repeat(40), name: 'Dune.Part.Two.2024.2160p.WEB-DL.DV.HDR.H.265-FLUX', state: 'downloading', progress: 0.42, length: 18e9, downloaded: 7.5e9, uploaded: 1.2e9, downloadSpeed: 8.4e6, uploadSpeed: 4.1e5, numPeers: 63, timeRemaining: 1_250_000, path: settings.downloadDir, addedAt: Date.now() - 3e6, source: { indexerName: 'TheRARBG' } },
     { infoHash: 'b'.repeat(40), name: 'ubuntu-26.04.1-desktop-amd64.iso', state: 'seeding', progress: 1, length: 6.4e9, downloaded: 6.4e9, uploaded: 9.1e9, downloadSpeed: 0, uploadSpeed: 1.3e6, numPeers: 12, timeRemaining: 0, path: settings.downloadDir, addedAt: Date.now() - 9e7 },
@@ -112,6 +112,12 @@ function createMockApi(): Api {
       ix.health = undefined
       return { ok: true, info: structuredClone(ix) }
     },
+    async checkTrackers() {
+      return { running: true, done: 0, total: indexers.length }
+    },
+    async trackerCheckStatus() {
+      return { running: false, done: 0, total: indexers.length, checkedAt: Date.now() - 5 * 3600_000 }
+    },
     async definitionsStatus() {
       return { checkedAt: Date.now() - 3 * 3600_000, updating: false }
     },
@@ -143,15 +149,12 @@ function createMockApi(): Api {
     },
     async torrentFiles() {
       return [
-        { index: 0, name: 'Dune.Part.Two.2160p.mkv', path: 'Dune/Dune.Part.Two.2160p.mkv', length: 17.6e9, downloaded: 7.4e9, progress: 0.42, selected: true, playable: true },
-        { index: 1, name: 'Dune.Part.Two.rus.srt', path: 'Dune/Subs/Dune.Part.Two.rus.srt', length: 9e4, downloaded: 9e4, progress: 1, selected: true, playable: false },
-        { index: 2, name: 'Sample.mkv', path: 'Dune/Sample.mkv', length: 4e8, downloaded: 0, progress: 0, selected: false, playable: true },
+        { index: 0, name: 'Dune.Part.Two.2160p.mkv', path: 'Dune/Dune.Part.Two.2160p.mkv', length: 17.6e9, downloaded: 7.4e9, progress: 0.42, selected: true },
+        { index: 1, name: 'Dune.Part.Two.rus.srt', path: 'Dune/Subs/Dune.Part.Two.rus.srt', length: 9e4, downloaded: 9e4, progress: 1, selected: true },
+        { index: 2, name: 'Sample.mkv', path: 'Dune/Sample.mkv', length: 4e8, downloaded: 0, progress: 0, selected: false },
       ]
     },
     async setFileSelection() {},
-    async streamUrl() {
-      return 'https://interactive-examples.mdn.mozilla.net/media/cc0-videos/flower.mp4'
-    },
     async getMagnetHandler() {
       return false
     },
@@ -235,6 +238,12 @@ function createMockApi(): Api {
     },
     async chooseDownloadDir() {
       return null
+    },
+    async chooseFolder() {
+      return 'E:\Series'
+    },
+    onAskSave() {
+      return () => {}
     },
     async openExternal(url: string) {
       window.open(url, '_blank')

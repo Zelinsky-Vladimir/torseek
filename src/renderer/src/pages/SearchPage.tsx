@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { Bell, BellRing, ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star, X, Languages } from 'lucide-react'
-import { matchesFilters } from '../../../core/filters'
+import { matchesFilters, relevance, type AudioFilter } from '../../../core/filters'
 import { groupReleases, type ReleaseGroup } from '../../../core/release'
 import type { IndexerStatus, TitleInfo } from '../../../shared/api'
 import { CATEGORY_CHIPS } from '../categories'
@@ -11,6 +11,7 @@ import { useStore, type SortKey } from '../store'
 import { Chip, EmptyState, IconButton } from '../ui'
 
 const SORTS: { id: SortKey; label: Key }[] = [
+  { id: 'relevance', label: 'search.sort.relevance' },
   { id: 'seeders', label: 'search.sort.seeders' },
   { id: 'newest', label: 'search.sort.newest' },
   { id: 'size-desc', label: 'search.sort.sizeDesc' },
@@ -21,7 +22,11 @@ const RESOLUTIONS = ['2160p', '1080p', '720p', '480p'] as const
 const resLabel = (r: string) => (r === '2160p' ? '4K' : r === '480p' ? 'SD' : r)
 const PAGE = 150
 
+const AUDIO: AudioFilter[] = ['en', 'ru', 'uk']
+
 const SORTERS: Record<SortKey, (a: ReleaseGroup, b: ReleaseGroup) => number> = {
+  // Relevance tiers are applied in the page; within a tier, best seeded first
+  relevance: (a, b) => (b.primary.seeders ?? -1) - (a.primary.seeders ?? -1),
   seeders: (a, b) => (b.primary.seeders ?? -1) - (a.primary.seeders ?? -1),
   newest: (a, b) => (b.primary.publishDate ?? '').localeCompare(a.primary.publishDate ?? ''),
   'size-desc': (a, b) => (b.primary.size ?? 0) - (a.primary.size ?? 0),
@@ -33,7 +38,8 @@ const isVideo = (cats: number[]) => cats.some((c) => Math.floor(c / 1000) === 2 
 
 export function SearchPage() {
   const { query, setQuery, runSearch, cancelSearch, running, releases, statuses, chips, setChips, settings, indexers } = useStore()
-  const { resolutions, minSeeds, sort, setFilters, title, watches, watchCurrent } = useStore()
+  const { resolutions, minSeeds, sort, setFilters, title, watches, watchCurrent, audio, searchedQuery, alsoSearched } = useStore()
+  const [showLoose, setShowLoose] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [limit, setLimit] = useState(PAGE)
   const hasSearched = Object.keys(statuses).length > 0
@@ -50,7 +56,8 @@ export function SearchPage() {
     return () => window.removeEventListener('keydown', onKey)
   }, [])
 
-  useEffect(() => setLimit(PAGE), [releases.length === 0, chips, resolutions, minSeeds, sort])
+  useEffect(() => setLimit(PAGE), [releases.length === 0, chips, resolutions, minSeeds, sort, audio])
+  useEffect(() => setShowLoose(false), [searchedQuery])
 
   const groups = useMemo(() => [...groupReleases(releases).values()], [releases])
   const showAdult = !!settings?.showAdult
@@ -62,10 +69,21 @@ export function SearchPage() {
     return counts
   }, [groups, showAdult])
 
-  const filtered = useMemo(
-    () => groups.filter((g) => matchesFilters(g.primary, { chips, resolutions, minSeeds, showAdult }, g.quality.resolution)).sort(SORTERS[sort]),
-    [groups, chips, resolutions, minSeeds, sort, showAdult],
-  )
+  // Trackers pad results with loosely related torrents; those go under "show N more"
+  const scores = useMemo(() => {
+    const terms = [searchedQuery, ...alsoSearched, ...(title ? [title.name] : [])].filter(Boolean)
+    return new Map(groups.map((g) => [g.key, Math.max(...g.sources.map((s) => relevance(s.title, terms)))]))
+  }, [groups, searchedQuery, alsoSearched, title])
+
+  const { filtered, hiddenLoose } = useMemo(() => {
+    const matching = groups.filter((g) => matchesFilters(g.primary, { chips, resolutions, minSeeds, audio, showAdult }, g.quality.resolution, g.audio))
+    const score = (g: ReleaseGroup) => scores.get(g.key) ?? 0
+    const relevant = matching.filter((g) => score(g) > 0)
+    // Nothing matches by words (the site found it by something else): don't hide everything
+    const shown = showLoose || relevant.length === 0 ? matching : relevant
+    const tier = (g: ReleaseGroup) => (sort === 'relevance' ? score(g) : Math.min(1, score(g)))
+    return { filtered: shown.sort((a, b) => tier(b) - tier(a) || SORTERS[sort](a, b)), hiddenLoose: matching.length - shown.length }
+  }, [groups, scores, chips, resolutions, minSeeds, audio, sort, showAdult, showLoose])
 
   const enabledCount = indexers.filter((i) => i.enabled).length
   const watched = watches.some((w) => w.query.toLowerCase() === query.trim().toLowerCase())
@@ -126,11 +144,16 @@ export function SearchPage() {
       {hasSearched && <TrackerProgress statuses={statuses} running={running} onCancel={cancelSearch} />}
 
       {hasSearched && (
-        <div className="flex items-center gap-4 border-b border-line/70 px-6 py-2 text-[12.5px] text-muted">
+        <div className="flex flex-wrap items-center gap-x-4 gap-y-1.5 whitespace-nowrap border-b border-line/70 px-6 py-2 text-[12.5px] text-muted">
           <span className="tabular-nums">
             <span className="text-fg">{tn('search.results', filtered.length)}</span>
             {filtered.length !== groups.length && <span className="text-faint"> {t('search.ofTotal', { n: groups.length })}</span>}
           </span>
+          {(hiddenLoose > 0 || showLoose) && (
+            <button onClick={() => setShowLoose(!showLoose)} title={t('search.looseHint')} className="text-faint underline-offset-2 hover:text-fg hover:underline">
+              {showLoose ? t('search.hideLoose') : tn('search.showLoose', hiddenLoose)}
+            </button>
+          )}
           <div className="h-4 w-px bg-line" />
           <div className="flex items-center gap-1">
             {RESOLUTIONS.map((r) => (
@@ -150,6 +173,22 @@ export function SearchPage() {
               {[0, 1, 5, 20, 100].map((n) => (
                 <option key={n} value={n}>
                   {n === 0 ? t('search.any') : `${n}+`}
+                </option>
+              ))}
+            </select>
+          </label>
+          <div className="h-4 w-px bg-line" />
+          <label className="flex items-center gap-2" title={t('search.audioHint')}>
+            {t('search.audio')}
+            <select
+              value={audio ?? ''}
+              onChange={(e) => setFilters({ audio: (e.target.value || undefined) as AudioFilter | undefined })}
+              className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none"
+            >
+              <option value="">{t('search.any')}</option>
+              {AUDIO.map((a) => (
+                <option key={a} value={a}>
+                  {t(`search.audio.${a}` as Key)}
                 </option>
               ))}
             </select>

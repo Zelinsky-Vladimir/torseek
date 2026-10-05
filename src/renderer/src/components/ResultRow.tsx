@@ -1,4 +1,4 @@
-import { ArrowDownToLine, Check, CircleAlert, ExternalLink, Loader2, Magnet, Star } from 'lucide-react'
+import { ArrowDownToLine, Check, CircleAlert, ExternalLink, Loader2, Magnet, Star, Volume2 } from 'lucide-react'
 import { groupKey, type ReleaseGroup } from '../../../core/release'
 import { categoryLabel } from '../categories'
 import { cx, formatAge, formatBytes, formatCount } from '../format'
@@ -45,6 +45,7 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
           {q.hdr && <Badge tone="warn">{q.hdr}</Badge>}
           {q.source && <Badge tone={q.source === 'CAM' ? 'bad' : 'neutral'}>{q.source}</Badge>}
           {q.codec && <Badge>{q.codec}</Badge>}
+          <AudioBadges audio={group.audio} />
           {freeleech && <Badge tone="good">{t('search.free')}</Badge>}
           <span className="truncate">
             <span className="text-fg/80">{r.indexerName}</span>
@@ -95,5 +96,23 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
         </button>
       </div>
     </div>
+  )
+}
+
+const AUDIO_LABEL: Record<string, string> = { en: 'ENG', ru: 'RUS', uk: 'UKR', fr: 'FRA', de: 'GER', es: 'SPA', it: 'ITA' }
+
+// Audio languages named in the title (a guess from the title, not from the files)
+function AudioBadges({ audio }: { audio: ReleaseGroup['audio'] }) {
+  const labels = [...(audio.multi ? ['MULTI'] : []), ...audio.langs.map((l) => AUDIO_LABEL[l]).filter(Boolean)].slice(0, 3)
+  if (!labels.length) return null
+  return (
+    <span className="flex items-center gap-1" title={t('search.audioHint')}>
+      <Volume2 className="size-3 text-faint" />
+      {labels.map((l) => (
+        <Badge key={l} tone={l === 'ENG' || l === 'MULTI' ? 'good' : 'neutral'}>
+          {l}
+        </Badge>
+      ))}
+    </span>
   )
 }

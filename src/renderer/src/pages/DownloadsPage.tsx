@@ -33,12 +33,15 @@ export function DownloadsPage() {
 
   const addMagnet = async () => {
     if (!magnet.trim().startsWith('magnet:')) return toast({ kind: 'error', text: t('dl.badMagnet') })
-    try {
-      await api.addMagnet(magnet)
-      setMagnet('')
-    } catch (e) {
-      toast({ kind: 'error', text: errorText(e) })
-    }
+    const uri = magnet
+    setMagnet('')
+    await useStore.getState().withSaveLocation(new URLSearchParams(uri.split('?')[1] ?? '').get('dn') || uri.slice(0, 60), async (path) => {
+      try {
+        await api.addMagnet(uri, path)
+      } catch (e) {
+        toast({ kind: 'error', text: errorText(e) })
+      }
+    })
   }
 
   return (

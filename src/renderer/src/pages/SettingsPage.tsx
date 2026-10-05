@@ -5,6 +5,7 @@ import { api } from '../api'
 import { LANGUAGES, t, type Key } from '../i18n'
 import { ACCENT_IDS, ACCENTS, resolveTheme, THEME_IDS, THEMES, type AccentId, type Palette, type ThemeSetting } from '../../../shared/themes'
 import { cx } from '../format'
+import { LanguagePicker, TrackerCheckRow } from '../components/TrackerLanguages'
 import { errorText, useStore } from '../store'
 import { Button, Input, Toggle } from '../ui'
 
@@ -64,6 +65,9 @@ export function SettingsPage() {
                 </Button>
               </div>
             </Row>
+            <Row label={t('set.askSave')} hint={t('set.askSaveHint')}>
+              <Toggle checked={settings.askWhereToSave} onChange={(v) => save({ askWhereToSave: v })} />
+            </Row>
             <Row label={t('set.seed')} hint={t('set.seedHint')}>
               <Toggle checked={settings.seedAfterDownload} onChange={(v) => save({ seedAfterDownload: v })} />
             </Row>
@@ -99,6 +103,17 @@ export function SettingsPage() {
           <TorznabSection settings={settings} save={save} />
 
           <Section title={t('set.section.trackers')}>
+            <div className="px-4 py-3.5">
+              <div className="text-[13.5px] font-medium">{t('set.searchLanguages')}</div>
+              <div className="mt-0.5 text-[12.5px] text-muted">{t('set.searchLanguagesHint')}</div>
+              <div className="mt-3">
+                <LanguagePicker value={settings.searchLanguages} onChange={(v) => save({ searchLanguages: v })} />
+              </div>
+            </div>
+            <Row label={t('set.autoManage')} hint={t('set.autoManageHint')}>
+              <Toggle checked={settings.autoManageTrackers} onChange={(v) => save({ autoManageTrackers: v })} />
+            </Row>
+            <TrackerCheckRow />
             <DefinitionsRow />
           </Section>
 

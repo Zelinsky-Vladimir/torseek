@@ -12,6 +12,8 @@ declare module 'webtorrent' {
     done: boolean
     select(priority?: number): void
     deselect(): void
+    /** Downloads the needed pieces first; async-iterable chunks */
+    createReadStream(opts?: { start?: number; end?: number }): AsyncIterable<Uint8Array>
   }
 
   export interface Torrent extends EventEmitter {
@@ -38,8 +40,7 @@ declare module 'webtorrent' {
   namespace WebTorrent {
     interface Instance extends EventEmitter {
       torrents: Torrent[]
-      add(torrentId: string | Uint8Array, opts?: { path?: string; deselect?: boolean }, onTorrent?: (t: Torrent) => void): Torrent
-      createServer(opts: { hostname?: string; pathname?: string }, force: 'node'): import('node:http').Server
+      add(torrentId: string | Uint8Array, opts?: { path?: string; deselect?: boolean; announce?: string[] }, onTorrent?: (t: Torrent) => void): Torrent
       throttleDownload(rate: number): void
       throttleUpload(rate: number): void
       destroy(cb?: (err?: Error) => void): void

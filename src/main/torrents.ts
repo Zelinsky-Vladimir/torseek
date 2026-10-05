@@ -1,6 +1,4 @@
-import { randomBytes } from 'node:crypto'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
-import type { AddressInfo } from 'node:net'
 import { join } from 'node:path'
 import WebTorrent from 'webtorrent'
 import type { Torrent, TorrentFile } from 'webtorrent'
@@ -43,13 +41,25 @@ export interface TorrentManagerOptions {
   onComplete?: (rec: TorrentRecord) => void
 }
 
-const MEDIA = /\.(mp4|m4v|mkv|webm|mov|avi|ts|m2ts|mp3|flac|m4a|aac|ogg|opus|wav)$/i
+// Added to every torrent, as most clients do: magnets from index sites often list only
+// trackers that died years ago, and then the metadata never arrives
+const PUBLIC_TRACKERS = [
+  'udp://tracker.opentrackr.org:1337/announce',
+  'udp://open.demonii.com:1337/announce',
+  'udp://open.stealth.si:80/announce',
+  'udp://tracker.torrent.eu.org:451/announce',
+  'udp://exodus.desync.com:6969/announce',
+  'udp://explodie.org:6969/announce',
+  'udp://tracker.dler.org:6969/announce',
+  'udp://tracker.qu.ax:6969/announce',
+  'udp://opentracker.io:6969/announce',
+  'http://tracker.opentrackr.org:1337/announce',
+]
 
 export class TorrentManager {
   private client: WebTorrent.Instance
   private live = new Map<string, Torrent>()
   private errors = new Map<string, string>()
-  private server?: { port: number; pathname: string }
 
   constructor(
     private readonly store: JsonStore<TorrentStoreShape>,
@@ -84,7 +94,8 @@ export class TorrentManager {
     return join(this.metaDir, `${infoHash}.torrent`)
   }
 
-  async add(target: DownloadTarget, path: string, source?: TorrentRecord['source']): Promise<{ infoHash: string }> {
+  /** title names the torrent until its metadata arrives (magnets often have an empty dn) */
+  async add(target: DownloadTarget, path: string, source?: TorrentRecord['source'], title?: string): Promise<{ infoHash: string }> {
     let infoHash: string
     let name: string
     let magnet: string | undefined
@@ -97,7 +108,7 @@ export class TorrentManager {
       magnet = target.uri
       infoHash = magnetToInfoHash(target.uri) ?? ''
       if (!/^[0-9a-f]{40}$/.test(infoHash)) throw new Error('Unsupported magnet link')
-      name = new URLSearchParams(target.uri.split('?')[1]).get('dn') ?? infoHash
+      name = new URLSearchParams(target.uri.split('?')[1]).get('dn') || title || infoHash
     }
 
     const existing = this.records().find((r) => r.infoHash === infoHash)
@@ -126,7 +137,7 @@ export class TorrentManager {
     }
 
     const partial = (rec.deselected?.length ?? 0) > 0
-    const torrent = this.client.add(torrentId, { path: rec.path, deselect: partial })
+    const torrent = this.client.add(torrentId, { path: rec.path, deselect: partial, announce: PUBLIC_TRACKERS })
     this.live.set(rec.infoHash, torrent)
 
     torrent.on('metadata', async () => {
@@ -235,24 +246,7 @@ export class TorrentManager {
       downloaded: f.downloaded,
       progress: f.progress,
       selected: !rec.deselected?.includes(index),
-      playable: MEDIA.test(f.name),
     }))
-  }
-
-  /** Local HTTP URL that streams a file while it downloads (range requests supported). */
-  async streamUrl(infoHash: string, index: number): Promise<string> {
-    const t = this.live.get(infoHash)
-    const file = t?.files[index]
-    if (!t || !file) throw new Error('File not available (torrent paused or metadata missing)')
-    if (!this.server) {
-      // Random path so other local software or web pages can't enumerate torrents
-      const pathname = '/' + randomBytes(12).toString('hex')
-      const server = this.client.createServer({ hostname: '127.0.0.1', pathname }, 'node')
-      await new Promise<void>((resolve) => server.listen(0, '127.0.0.1', () => resolve()))
-      this.server = { port: (server.address() as AddressInfo).port, pathname }
-    }
-    const encoded = file.path.split(/[/\\]/).map(encodeURIComponent).join('/')
-    return `http://127.0.0.1:${this.server.port}${this.server.pathname}/${infoHash}/${encoded}`
   }
 
   setLimits(downloadKBs: number, uploadKBs: number) {

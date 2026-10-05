@@ -10,6 +10,7 @@ const IPC = {
   updateStatus: 'api:update-status',
   navigate: 'api:navigate',
   libraryChanged: 'api:library-changed',
+  askSave: 'api:ask-save',
 }
 
 const call =
@@ -30,11 +31,11 @@ const subscribe =
 const methods: ApiMethod[] = [
   'search', 'cancelSearch',
   'listIndexers', 'setIndexerEnabled', 'updateIndexerSettings', 'testIndexer',
-  'passChallenge',
+  'passChallenge', 'checkTrackers', 'trackerCheckStatus',
   'download', 'getMagnet', 'addMagnet', 'listTorrents', 'torrentFiles',
   'pauseTorrent', 'resumeTorrent', 'removeTorrent', 'openTorrentFolder', 'openTorrentFile',
-  'setFileSelection', 'streamUrl',
-  'getSettings', 'updateSettings', 'chooseDownloadDir', 'openExternal',
+  'setFileSelection',
+  'getSettings', 'updateSettings', 'chooseDownloadDir', 'chooseFolder', 'openExternal',
   'definitionsStatus', 'updateDefinitions',
   'getMagnetHandler', 'setMagnetHandler', 'updateStatus', 'checkForUpdates', 'installUpdate',
   'history', 'removeHistory', 'clearHistory', 'favorites', 'favoriteKeys', 'toggleFavorite',
@@ -50,6 +51,7 @@ const api = {
   onUpdateStatus: subscribe<UpdateStatus>(IPC.updateStatus),
   onNavigate: subscribe<NavigateTarget>(IPC.navigate),
   onLibraryChanged: subscribe<void>(IPC.libraryChanged),
+  onAskSave: subscribe<{ magnet: string; name: string }>(IPC.askSave),
 } as unknown as Api
 
 contextBridge.exposeInMainWorld('api', api)

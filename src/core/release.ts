@@ -1,3 +1,4 @@
+import { audioOf, type AudioInfo } from './audio'
 // A single search result from a single tracker, normalised.
 export interface Release {
   indexerId: string
@@ -102,6 +103,7 @@ export interface ReleaseGroup {
   primary: Release
   sources: Release[]
   quality: Quality
+  audio: AudioInfo
 }
 
 export function groupKey(r: Release): string {
@@ -115,7 +117,7 @@ export function groupReleases(releases: Release[], existing = new Map<string, Re
     const key = groupKey(r)
     const g = existing.get(key)
     if (!g) {
-      existing.set(key, { key, primary: r, sources: [r], quality: parseQuality(r.title) })
+      existing.set(key, { key, primary: r, sources: [r], quality: parseQuality(r.title), audio: audioOf(r.title, r.categories.includes(5070)) })
       continue
     }
     if (g.sources.some((s) => s.indexerId === r.indexerId && s.guid === r.guid)) continue

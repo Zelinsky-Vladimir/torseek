@@ -1,5 +1,5 @@
 // Drives the built app's torrent client with a legal test torrent (Big Buck Bunny, has a
-// web seed so it works without peers): file selection, streaming, player, close-to-tray.
+// web seed so it works without peers): file selection, close-to-tray.
 //   npm run build && node scripts/e2e-client.mjs
 
 import { _electron as electron } from 'playwright-core'
@@ -36,7 +36,6 @@ for (let i = 0; i < 60 && !files.length; i++) {
 }
 check(files.length > 1, `metadata loaded: ${files.map((f) => f.name).join(', ')}`)
 const video = files.find((f) => f.name.endsWith('.mp4'))
-check(!!video?.playable, 'mp4 marked playable')
 
 await page.evaluate(([h, i]) => window.api.setFileSelection(h, [i]), [infoHash, video.index])
 await page.waitForTimeout(1500)
@@ -45,25 +44,11 @@ check(snap.partial === true && Math.abs(snap.length - video.length) < 1, `partia
 const after = await page.evaluate((h) => window.api.torrentFiles(h), infoHash)
 check(after.filter((f) => f.selected).length === 1, 'only one file selected')
 
-const url = await page.evaluate(([h, i]) => window.api.streamUrl(h, i), [infoHash, video.index])
-const res = await fetch(url, { headers: { Range: 'bytes=0-65535' } })
-const body = new Uint8Array(await res.arrayBuffer())
-check(res.status === 206 && body.length === 65536, `stream serves byte ranges (${res.status}, ${body.length} bytes, ${res.headers.get('content-type')})`)
-const ftyp = new TextDecoder().decode(body.slice(4, 8))
-check(ftyp === 'ftyp', `stream starts with an MP4 header ("${ftyp}")`)
-
-// UI: expand the torrent, open the player
+// UI: expand the torrent's file list
 await page.click('nav >> text=Downloads')
 await page.click('button[title="Files"]')
 await page.waitForSelector('text=Big Buck Bunny.mp4')
 await page.screenshot({ path: join(shots, 'client-files.png') })
-await page.click('button[title="Play"]')
-await page.waitForFunction(() => document.querySelector('video')?.readyState >= 2, null, { timeout: 30_000 }).catch(() => {})
-const ready = await page.evaluate(() => document.querySelector('video')?.readyState ?? -1)
-check(ready >= 2, `in-app player has decoded frames (readyState ${ready})`)
-await page.waitForTimeout(1500)
-await page.screenshot({ path: join(shots, 'client-player.png') })
-await page.keyboard.press('Escape')
 
 // Close the window: the app should keep running in the tray
 await app.evaluate(({ BrowserWindow }) => BrowserWindow.getAllWindows()[0].close())

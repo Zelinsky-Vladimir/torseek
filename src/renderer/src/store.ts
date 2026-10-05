@@ -1,3 +1,4 @@
+import type { AudioFilter } from '../../core/filters'
 import { create } from 'zustand'
 import type { AppSettings, HistoryItem, IndexerInfo, IndexerStatus, Release, ResultFilters, TitleInfo, TorrentInfo, UpdateStatus, Watch } from '../../shared/api'
 import type { ChipId } from '../../core/filters'
@@ -7,7 +8,7 @@ import { applyTheme } from './theme'
 import { resolveLang, setLang, t, translateError, type Lang } from './i18n'
 
 export type Page = 'search' | 'downloads' | 'library' | 'trackers' | 'settings'
-export type SortKey = 'seeders' | 'newest' | 'size-desc' | 'size-asc' | 'name'
+export type SortKey = 'relevance' | 'seeders' | 'newest' | 'size-desc' | 'size-asc' | 'name'
 
 export interface Toast {
   id: number
@@ -32,8 +33,11 @@ interface State {
   chips: ChipId[]
   resolutions: string[]
   minSeeds: number
+  audio?: AudioFilter
+  /** The query the current results are for */
+  searchedQuery: string
   sort: SortKey
-  setFilters: (patch: Partial<Pick<State, 'chips' | 'resolutions' | 'minSeeds' | 'sort'>>) => void
+  setFilters: (patch: Partial<Pick<State, 'chips' | 'resolutions' | 'minSeeds' | 'sort' | 'audio'>>) => void
   /** Movie/series card for the current query */
   title: TitleInfo | null
   searchId?: string
@@ -53,6 +57,7 @@ interface State {
   // grabbing
   grabs: Record<string, GrabState>
   grab: (r: Release) => Promise<void>
+  grabTo: (r: Release, path?: string) => Promise<void>
   copyMagnet: (r: Release) => Promise<void>
 
   // data
@@ -62,6 +67,9 @@ interface State {
   loadIndexers: () => Promise<void>
   patchIndexer: (info: IndexerInfo) => void
   saveSettings: (patch: Partial<AppSettings>) => Promise<void>
+  /** Open "where to save?" (when asking is on) and run the download with the chosen folder */
+  saveRequest?: { title: string; run: (path?: string) => Promise<void> }
+  withSaveLocation: (title: string, run: (path?: string) => Promise<void>) => Promise<void>
 
   // library
   favoriteKeys: Set<string>
@@ -104,12 +112,14 @@ export const useStore = create<State>((set, get) => ({
   chips: [],
   resolutions: [],
   minSeeds: 0,
-  sort: 'seeders',
+  audio: undefined,
+  searchedQuery: '',
+  sort: 'relevance',
   title: null,
   setFilters: (patch) => set(patch),
   currentFilters: () => {
-    const { chips, resolutions, minSeeds } = get()
-    return { chips, resolutions, minSeeds }
+    const { chips, resolutions, minSeeds, audio } = get()
+    return { chips, resolutions, minSeeds, audio }
   },
   running: false,
   releases: [],
@@ -123,7 +133,7 @@ export const useStore = create<State>((set, get) => ({
     if (!query.trim()) return
     if (searchId) void api.cancelSearch(searchId)
     const id = crypto.randomUUID()
-    set({ running: true, releases: [], alsoSearched: [], statuses: {}, elapsedMs: undefined, searchId: id, page: 'search', title: null })
+    set({ running: true, searchedQuery: query.trim(), releases: [], alsoSearched: [], statuses: {}, elapsedMs: undefined, searchId: id, page: 'search', title: null })
     await api.search({ searchId: id, q: query })
     void api.lookupTitle(query).then((title) => get().searchId === id && set({ title }))
   },
@@ -134,10 +144,13 @@ export const useStore = create<State>((set, get) => ({
 
   grabs: {},
   async grab(r) {
+    await get().withSaveLocation(r.title, (path) => get().grabTo(r, path))
+  },
+  async grabTo(r, path) {
     const key = grabKey(r)
     set((s) => ({ grabs: { ...s.grabs, [key]: 'loading' } }))
     try {
-      await api.download(r)
+      await api.download(r, path)
       set((s) => ({ grabs: { ...s.grabs, [key]: 'done' } }))
       get().toast({ kind: 'success', text: t('dl.added', { title: truncate(r.title, 60) }), action: { label: t('common.show'), run: () => get().setPage('downloads') } })
     } catch (e) {
@@ -165,6 +178,10 @@ export const useStore = create<State>((set, get) => ({
   },
   async saveSettings(patch) {
     applySettings(await api.updateSettings(patch))
+  },
+  async withSaveLocation(title, run) {
+    if (get().settings?.askWhereToSave) set({ saveRequest: { title, run } })
+    else await run()
   },
 
   favoriteKeys: new Set(),
@@ -232,6 +249,11 @@ api.onSearchEvent((e) => {
 })
 
 api.onTorrents((torrents) => useStore.setState({ torrents }))
+api.onAskSave(({ magnet, name }) =>
+  void useStore.getState().withSaveLocation(name, async (path) => {
+    await api.addMagnet(magnet, path)
+  }),
+)
 api.onIndexersChanged(() => void useStore.getState().loadIndexers())
 api.onUpdateStatus((update) => useStore.setState({ update }))
 api.onNavigate((page) => useStore.setState({ page }))

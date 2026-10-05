@@ -1,19 +1,17 @@
 import { useEffect, useState } from 'react'
-import { ExternalLink, PlayCircle } from 'lucide-react'
+import { ExternalLink } from 'lucide-react'
 import type { TorrentFileInfo, TorrentInfo } from '../../../shared/api'
 import { api } from '../api'
 import { cx, formatBytes } from '../format'
 import { t, tn } from '../i18n'
 import { errorText, useStore } from '../store'
 import { ProgressBar } from '../ui'
-import { Player } from './Player'
 
 // Per-torrent file list: choose what to download, play media while it downloads, open finished files.
 
 export function FilesPanel({ torrent }: { torrent: TorrentInfo }) {
   const toast = useStore((s) => s.toast)
   const [files, setFiles] = useState<TorrentFileInfo[] | null>(null)
-  const [playing, setPlaying] = useState<TorrentFileInfo | null>(null)
   const live = torrent.state !== 'paused' && torrent.state !== 'error' && torrent.state !== 'done'
 
   useEffect(() => {
@@ -80,11 +78,6 @@ export function FilesPanel({ torrent }: { torrent: TorrentInfo }) {
             <span className="w-16 shrink-0 text-right text-[12px] tabular-nums text-muted">{formatBytes(f.length)}</span>
             <span className="w-10 shrink-0 text-right text-[12px] tabular-nums text-faint">{Math.floor(f.progress * 100)}%</span>
             <div className="flex w-16 shrink-0 justify-end gap-1">
-              {f.playable && live && (
-                <button title={t('dl.play')} onClick={() => setPlaying(f)} className="rounded p-1 text-accent hover:bg-accent/15">
-                  <PlayCircle className="size-4" />
-                </button>
-              )}
               {f.progress >= 1 && (
                 <button
                   title={t('dl.openFile')}
@@ -98,7 +91,6 @@ export function FilesPanel({ torrent }: { torrent: TorrentInfo }) {
           </div>
         ))}
       </div>
-      {playing && <Player infoHash={torrent.infoHash} file={playing} onClose={() => setPlaying(null)} />}
     </div>
   )
 }
