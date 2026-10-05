@@ -17,7 +17,7 @@ const seconds = Number(process.argv[3] ?? 20)
 const app = await electron.launch({
   executablePath: join(root, 'node_modules/electron/dist', process.platform === 'win32' ? 'electron.exe' : 'electron'),
   args: [root],
-  env: { ...process.env, TORSEEK_USER_DATA: mkdtempSync(join(tmpdir(), 'torseek-e2e-')), TORSEEK_NO_UPDATE: '1', TORSEEK_LANG: 'en' },
+  env: { ...process.env, TORSEEK_USER_DATA: mkdtempSync(join(tmpdir(), 'torseek-e2e-')), TORSEEK_NO_UPDATE: '1', TORSEEK_DOWNLOAD_DIR: mkdtempSync(join(tmpdir(), 'torseek-dl-')), TORSEEK_LANG: 'en' },
 })
 const page = await app.firstWindow()
 await page.waitForSelector('nav button')

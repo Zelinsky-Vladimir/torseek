@@ -21,7 +21,7 @@ const exe = process.env.TORSEEK_EXE
 const app = await electron.launch({
   executablePath: exe ?? electronBin,
   args: exe ? [] : [root],
-  env: { ...process.env, TORSEEK_USER_DATA: userData, TORSEEK_NO_UPDATE: '1', TORSEEK_LANG: process.env.TORSEEK_LANG ?? 'en' },
+  env: { ...process.env, TORSEEK_USER_DATA: userData, TORSEEK_NO_UPDATE: '1', TORSEEK_DOWNLOAD_DIR: mkdtempSync(join(tmpdir(), 'torseek-dl-')), TORSEEK_LANG: process.env.TORSEEK_LANG ?? 'en' },
   timeout: 30_000,
 })
 app.process().stdout?.on('data', (d) => process.stdout.write(`[main] ${d}`))

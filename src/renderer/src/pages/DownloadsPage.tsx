@@ -103,7 +103,15 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
   const [open, setOpen] = useState(false)
 
   return (
-    <div className={cx('group rounded-xl px-3 py-3 hover:bg-panel', open && 'bg-panel')}>
+    <div
+      className={cx('group rounded-xl px-3 py-3 hover:bg-panel', open && 'bg-panel')}
+      // Double-click opens the torrent's folder (not on buttons or inside the file list)
+      onDoubleClick={(e) => {
+        if ((e.target as HTMLElement).closest('button, input, a, [data-files]')) return
+        window.getSelection()?.removeAllRanges()
+        void run(api.openTorrentFolder(t.infoHash))
+      }}
+    >
       <div className="flex items-center gap-4">
         <button onClick={() => setOpen(!open)} className="-ml-1 rounded p-0.5 text-faint hover:text-fg" aria-label={tr('dl.files')} title={tr('dl.files')}>
           <ChevronDown className={cx('size-4 transition-transform', !open && '-rotate-90')} />

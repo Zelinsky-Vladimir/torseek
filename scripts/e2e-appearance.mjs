@@ -17,7 +17,7 @@ const query = process.argv[2] ?? 'дюна'
 const app = await electron.launch({
   executablePath: join(root, 'node_modules/electron/dist', process.platform === 'win32' ? 'electron.exe' : 'electron'),
   args: [root],
-  env: { ...process.env, TORSEEK_USER_DATA: mkdtempSync(join(tmpdir(), 'torseek-e2e-')), TORSEEK_NO_UPDATE: '1', TORSEEK_LANG: process.env.TORSEEK_LANG ?? 'ru' },
+  env: { ...process.env, TORSEEK_USER_DATA: mkdtempSync(join(tmpdir(), 'torseek-e2e-')), TORSEEK_NO_UPDATE: '1', TORSEEK_DOWNLOAD_DIR: mkdtempSync(join(tmpdir(), 'torseek-dl-')), TORSEEK_LANG: process.env.TORSEEK_LANG ?? 'ru' },
 })
 const page = await app.firstWindow()
 page.on('pageerror', (e) => console.log('[renderer:exception]', e.message))

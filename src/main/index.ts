@@ -538,7 +538,8 @@ app.on('open-url', (e, url) => {
 app.whenReady().then(async () => {
   const defaultSettings: AppSettings = {
     language: (process.env.TORSEEK_LANG as AppSettings['language'] | undefined) ?? 'auto',
-    downloadDir: join(app.getPath('downloads'), 'Torseek'),
+    // TORSEEK_DOWNLOAD_DIR keeps test runs out of the real Downloads folder
+    downloadDir: process.env.TORSEEK_DOWNLOAD_DIR ?? join(app.getPath('downloads'), 'Torseek'),
     askWhereToSave: true,
     searchLanguages: [],
     autoManageTrackers: true,

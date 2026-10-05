@@ -46,7 +46,7 @@ export function FilesPanel({ torrent }: { torrent: TorrentInfo }) {
   const selectedSize = files.filter((f) => f.selected).reduce((s, f) => s + f.length, 0)
 
   return (
-    <div className="mt-3 rounded-lg border border-line bg-bg/60">
+    <div data-files className="mt-3 rounded-lg border border-line bg-bg/60">
       <div className="flex items-center gap-3 border-b border-line px-3 py-2 text-[12px] text-muted">
         <span>
           {tn('dl.filesCount', files.length)} · {formatBytes(selectedSize)}
