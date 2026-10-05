@@ -23,6 +23,7 @@ export class Toloka extends NativeIndexer {
     { name: 'username', type: 'text', label: 'Username' },
     { name: 'password', type: 'password', label: 'Password' },
     { name: 'freeleech', type: 'checkbox', label: 'Search freeleech only', default: false },
+    { name: 'pages', type: 'select', label: 'Result pages per search', default: '2', options: { '1': '1', '2': '2', '3': '3', '5': '5' } },
   ]
 
   constructor(opts: NativeOptions) {
@@ -50,7 +51,13 @@ export class Toloka extends NativeIndexer {
       res = await this.fetch({ url, signal })
       if (!res.text.includes(LOGGED_IN)) throw new LoginRequiredError('Still not logged in after signing in')
     }
-    return this.parse(res.text)
+    const releases = this.parse(res.text)
+    if (query.q.trim()) {
+      for (const next of this.nextPageUrls(res.text, url, 'tracker.php').slice(0, this.pageCount() - 1)) {
+        releases.push(...this.parse((await this.fetch({ url: next, signal })).text))
+      }
+    }
+    return releases
   }
 
   private parse(html: string): Release[] {

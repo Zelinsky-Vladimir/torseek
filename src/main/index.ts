@@ -14,6 +14,10 @@ import { openSiteWindow } from './site-window'
 import { JsonStore } from './store'
 import { TorrentManager, type TorrentStoreShape } from './torrents'
 import { AppTray } from './tray'
+import { Library } from './library'
+import { lookupTitle } from './titles'
+import { Watcher } from './watcher'
+import { groupKey } from '../core/release'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const log = (msg: string) => console.log(`[torseek] ${msg}`)
@@ -36,6 +40,8 @@ let torrents: TorrentManager
 let definitions: DefinitionsUpdater
 let appUpdater: AppUpdater
 let tray: AppTray | null = null
+let library: Library
+let watcher: Watcher
 let quitting = false
 const defStatus: DefinitionsStatus = { checkedAt: 0, updating: false }
 const searches = new Map<string, AbortController>()
@@ -114,6 +120,14 @@ function refreshTray() {
   })
 }
 
+function notifyWatch(query: string, count: number) {
+  if (!settings().notifyOnComplete || !Notification.isSupported()) return
+  const { t, tn } = i18n()
+  const n = new Notification({ title: t('notify.watch', { query }), body: tn('notify.watchBody', count), icon: iconPath() })
+  n.on('click', () => showWindow('library'))
+  n.show()
+}
+
 function notifyComplete(name: string) {
   if (!settings().notifyOnComplete || !Notification.isSupported()) return
   const n = new Notification({ title: i18n().t('notify.done'), body: name, icon: iconPath() })
@@ -137,6 +151,7 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       const controller = new AbortController()
       searches.set(searchId, controller)
       const started = Date.now()
+      const keys = new Set<string>()
       void indexers
         .search(
           { q: req.q.trim(), categories: req.categories },
@@ -144,12 +159,16 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
             concurrency: settings().searchConcurrency,
             timeoutMs: settings().searchTimeoutSec * 1000,
             signal: controller.signal,
-            onResults: (indexerId, releases) => send({ type: 'results', searchId, indexerId, releases }),
+            onResults: (indexerId, releases) => {
+              for (const r of releases) keys.add(groupKey(r))
+              send({ type: 'results', searchId, indexerId, releases })
+            },
             onStatus: (status) => send({ type: 'status', searchId, status }),
           },
         )
         .finally(() => {
           searches.delete(searchId)
+          if (!controller.signal.aborted) library.addHistory(req.q, keys.size)
           send({ type: 'done', searchId, elapsedMs: Date.now() - started })
         })
       return { searchId }
@@ -277,6 +296,53 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       quitting = true
       appUpdater.install()
     },
+
+    async history() {
+      return library.history()
+    },
+    async removeHistory(query) {
+      library.removeHistory(query)
+    },
+    async clearHistory() {
+      library.clearHistory()
+    },
+    async favorites() {
+      return library.favorites()
+    },
+    async favoriteKeys() {
+      return library.favoriteKeys()
+    },
+    async toggleFavorite(release) {
+      const key = groupKey(release)
+      const on = !library.favoriteKeys().includes(key)
+      if (on) library.addFavorite(release)
+      else library.removeFavorite(key)
+      return on
+    },
+    async watches() {
+      return library.watches()
+    },
+    async addWatch(query, filters, meta) {
+      const id = library.addWatch(query, filters, meta)
+      // First check records what already exists, so only later releases count as new
+      void watcher.check(id).then(() => sendToUi(IPC.libraryChanged))
+      return library.watch(id)!
+    },
+    async removeWatch(id) {
+      library.removeWatch(id)
+    },
+    async checkWatch(id) {
+      return watcher.check(id)
+    },
+    async watchHits(id) {
+      return library.hits(id)
+    },
+    async markWatchSeen(id) {
+      library.markSeen(id)
+    },
+    async lookupTitle(query) {
+      return settings().showTitleInfo ? lookupTitle(query) : null
+    },
   }
 }
 
@@ -368,6 +434,8 @@ app.whenReady().then(async () => {
     closeToTray: true,
     notifyOnComplete: true,
     openAtLogin: false,
+    showTitleInfo: true,
+    watchIntervalHours: 6,
   }
   store = new JsonStore<StoreShape>(join(app.getPath('userData'), 'torseek.json'), { settings: defaultSettings, indexers: {}, torrents: [] })
   // Settings added in later versions get their defaults in older profiles
@@ -407,6 +475,22 @@ app.whenReady().then(async () => {
   const automation = !!process.env.TORSEEK_NO_UPDATE
   // Refresh definitions in the background at most once a day
   if (Date.now() - defStatus.checkedAt > 24 * 3600_000 && !automation) setTimeout(() => void updateDefinitions(), 5000)
+
+  library = new Library(join(app.getPath('userData'), 'library.db'))
+  watcher = new Watcher(
+    library,
+    indexers,
+    {
+      intervalMs: () => settings().watchIntervalHours * 3600_000,
+      showAdult: () => settings().showAdult,
+      concurrency: () => Math.max(2, Math.floor(settings().searchConcurrency / 2)),
+      timeoutMs: () => settings().searchTimeoutSec * 1000,
+      onNew: (w, fresh) => notifyWatch(w.title ?? w.query, fresh.length),
+      onChecked: () => sendToUi(IPC.libraryChanged),
+    },
+    log,
+  )
+  if (!automation) watcher.start()
 
   appUpdater = new AppUpdater((s) => sendToUi(IPC.updateStatus, s))
   if (appUpdater.supported && !automation) setTimeout(() => void appUpdater.check(), 15_000)
@@ -454,5 +538,7 @@ app.on('before-quit', (e) => {
   stopping = true
   store.flush()
   tray?.destroy()
+  watcher?.stop()
+  library?.close()
   void torrents.destroy().finally(() => app.quit())
 })

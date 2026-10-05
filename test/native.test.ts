@@ -44,6 +44,25 @@ describe('RuTracker', () => {
     expect(r.categories).toContain(2010)
   })
 
+  it('follows result pages from the listing links', async () => {
+    const urls: string[] = []
+    const page = (n: number) =>
+      `<div id="logged-in-username">me</div><table id="tor-tbl"><tbody>${row.replace('t=555', `t=${555 + n}`)}</tbody></table>
+       <a class="pg" href="tracker.php?search_id=abc&amp;start=50">2</a><a class="pg" href="tracker.php?search_id=abc&amp;start=100">3</a>`
+    const http = new HttpClient({
+      fetch: async (url) => {
+        urls.push(url)
+        const start = Number(new URL(url).searchParams.get('start') ?? 0)
+        return new Response(new Uint8Array(iconv.encode(page(start / 50), 'windows-1251')))
+      },
+    })
+    const ix = new RuTracker({ http })
+    ix.updateSettings({ pages: '3' })
+    const results = await ix.search({ q: 'dune' })
+    expect(urls.slice(1)).toEqual(['https://rutracker.org/forum/tracker.php?search_id=abc&start=50', 'https://rutracker.org/forum/tracker.php?search_id=abc&start=100'])
+    expect(results).toHaveLength(3)
+  })
+
   it('asks for credentials when the session is not logged in', async () => {
     const http = new HttpClient({ fetch: async () => new Response('<html>guest</html>') })
     await expect(new RuTracker({ http }).search({ q: 'x' })).rejects.toBeInstanceOf(LoginRequiredError)

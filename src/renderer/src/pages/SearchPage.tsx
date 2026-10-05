@@ -1,14 +1,15 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { ArrowDownToLine, Check, ChevronDown, CircleAlert, ExternalLink, Loader2, Magnet, Search, ShieldAlert, Sparkles, X } from 'lucide-react'
+import { Bell, BellRing, ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star, X } from 'lucide-react'
+import { matchesFilters } from '../../../core/filters'
 import { groupReleases, type ReleaseGroup } from '../../../core/release'
-import type { IndexerStatus } from '../../../shared/api'
-import { CATEGORY_CHIPS, categoryLabel, isAdult } from '../categories'
-import { cx, formatAge, formatBytes, formatCount } from '../format'
-import { grabStateOf, recentQueries, useStore } from '../store'
-import { Badge, Chip, EmptyState, IconButton } from '../ui'
+import type { IndexerStatus, TitleInfo } from '../../../shared/api'
+import { CATEGORY_CHIPS } from '../categories'
+import { ResultHeader, ResultRow } from '../components/ResultRow'
+import { cx } from '../format'
 import { t, tn, translateError, type Key } from '../i18n'
+import { useStore, type SortKey } from '../store'
+import { Chip, EmptyState, IconButton } from '../ui'
 
-type SortKey = 'seeders' | 'newest' | 'size-desc' | 'size-asc' | 'name'
 const SORTS: { id: SortKey; label: Key }[] = [
   { id: 'seeders', label: 'search.sort.seeders' },
   { id: 'newest', label: 'search.sort.newest' },
@@ -17,14 +18,23 @@ const SORTS: { id: SortKey; label: Key }[] = [
   { id: 'name', label: 'search.sort.name' },
 ]
 const RESOLUTIONS = ['2160p', '1080p', '720p', '480p'] as const
+const resLabel = (r: string) => (r === '2160p' ? '4K' : r === '480p' ? 'SD' : r)
 const PAGE = 150
+
+const SORTERS: Record<SortKey, (a: ReleaseGroup, b: ReleaseGroup) => number> = {
+  seeders: (a, b) => (b.primary.seeders ?? -1) - (a.primary.seeders ?? -1),
+  newest: (a, b) => (b.primary.publishDate ?? '').localeCompare(a.primary.publishDate ?? ''),
+  'size-desc': (a, b) => (b.primary.size ?? 0) - (a.primary.size ?? 0),
+  'size-asc': (a, b) => (a.primary.size ?? Infinity) - (b.primary.size ?? Infinity),
+  name: (a, b) => a.primary.title.localeCompare(b.primary.title),
+}
+
+const isVideo = (cats: number[]) => cats.some((c) => Math.floor(c / 1000) === 2 || Math.floor(c / 1000) === 5)
 
 export function SearchPage() {
   const { query, setQuery, runSearch, cancelSearch, running, releases, statuses, chips, setChips, settings, indexers } = useStore()
+  const { resolutions, minSeeds, sort, setFilters, title, watches, watchCurrent } = useStore()
   const inputRef = useRef<HTMLInputElement>(null)
-  const [sort, setSort] = useState<SortKey>('seeders')
-  const [resolutions, setResolutions] = useState<string[]>([])
-  const [minSeeds, setMinSeeds] = useState(0)
   const [limit, setLimit] = useState(PAGE)
   const hasSearched = Object.keys(statuses).length > 0
 
@@ -43,35 +53,27 @@ export function SearchPage() {
   useEffect(() => setLimit(PAGE), [releases.length === 0, chips, resolutions, minSeeds, sort])
 
   const groups = useMemo(() => [...groupReleases(releases).values()], [releases])
+  const showAdult = !!settings?.showAdult
 
-  const visibleChips = CATEGORY_CHIPS.filter((c) => !c.adult || settings?.showAdult)
+  const visibleChips = CATEGORY_CHIPS.filter((c) => !c.adult || showAdult)
   const chipCounts = useMemo(() => {
     const counts: Record<string, number> = {}
     for (const g of groups) for (const c of visibleChips) if (g.primary.categories.some(c.match)) counts[c.id] = (counts[c.id] ?? 0) + 1
     return counts
-  }, [groups, settings?.showAdult])
+  }, [groups, showAdult])
 
-  const filtered = useMemo(() => {
-    const chipDefs = CATEGORY_CHIPS.filter((c) => chips.includes(c.id))
-    const list = groups.filter((g) => {
-      const r = g.primary
-      if (!settings?.showAdult && isAdult(r.categories)) return false
-      if (chipDefs.length && !chipDefs.some((c) => r.categories.some(c.match))) return false
-      if (resolutions.length && !resolutions.includes(g.quality.resolution ?? '')) return false
-      if (minSeeds && (r.seeders ?? 0) < minSeeds) return false
-      return true
-    })
-    const by: Record<SortKey, (a: ReleaseGroup, b: ReleaseGroup) => number> = {
-      seeders: (a, b) => (b.primary.seeders ?? -1) - (a.primary.seeders ?? -1),
-      newest: (a, b) => (b.primary.publishDate ?? '').localeCompare(a.primary.publishDate ?? ''),
-      'size-desc': (a, b) => (b.primary.size ?? 0) - (a.primary.size ?? 0),
-      'size-asc': (a, b) => (a.primary.size ?? Infinity) - (b.primary.size ?? Infinity),
-      name: (a, b) => a.primary.title.localeCompare(b.primary.title),
-    }
-    return list.sort(by[sort])
-  }, [groups, chips, resolutions, minSeeds, sort, settings?.showAdult])
+  const filtered = useMemo(
+    () => groups.filter((g) => matchesFilters(g.primary, { chips, resolutions, minSeeds, showAdult }, g.quality.resolution)).sort(SORTERS[sort]),
+    [groups, chips, resolutions, minSeeds, sort, showAdult],
+  )
 
   const enabledCount = indexers.filter((i) => i.enabled).length
+  const watched = watches.some((w) => w.query.toLowerCase() === query.trim().toLowerCase())
+  // A movie/series card only makes sense when the results are mostly video
+  const videoShare = groups.length ? groups.filter((g) => isVideo(g.primary.categories)).length / groups.length : 0
+  const showTitle = !!title && hasSearched && (videoShare >= 0.3 || (running && groups.length < 20))
+
+  const toggleResolution = (r: string) => setFilters({ resolutions: resolutions.includes(r) ? resolutions.filter((x) => x !== r) : [...resolutions, r] })
 
   return (
     <div className="flex h-full flex-col">
@@ -134,17 +136,17 @@ export function SearchPage() {
             {RESOLUTIONS.map((r) => (
               <button
                 key={r}
-                onClick={() => setResolutions(resolutions.includes(r) ? resolutions.filter((x) => x !== r) : [...resolutions, r])}
+                onClick={() => toggleResolution(r)}
                 className={cx('rounded-md px-2 py-0.5 font-medium transition-colors', resolutions.includes(r) ? 'bg-accent/15 text-fg' : 'hover:text-fg')}
               >
-                {r === '2160p' ? '4K' : r === '480p' ? 'SD' : r}
+                {resLabel(r)}
               </button>
             ))}
           </div>
           <div className="h-4 w-px bg-line" />
           <label className="flex items-center gap-2">
             {t('search.minSeeds')}
-            <select value={minSeeds} onChange={(e) => setMinSeeds(Number(e.target.value))} className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none">
+            <select value={minSeeds} onChange={(e) => setFilters({ minSeeds: Number(e.target.value) })} className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none">
               {[0, 1, 5, 20, 100].map((n) => (
                 <option key={n} value={n}>
                   {n === 0 ? t('search.any') : `${n}+`}
@@ -152,9 +154,18 @@ export function SearchPage() {
               ))}
             </select>
           </label>
-          <div className="ml-auto flex items-center gap-2">
-            {t('search.sort')}
-            <select value={sort} onChange={(e) => setSort(e.target.value as SortKey)} className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none">
+          <div className="ml-auto flex items-center gap-3">
+            <button
+              onClick={() => !watched && void watchCurrent()}
+              title={t('search.watchHint')}
+              className={cx('flex items-center gap-1.5 rounded-md px-2 py-0.5 font-medium', watched ? 'text-accent' : 'hover:bg-hover hover:text-fg')}
+            >
+              {watched ? <BellRing className="size-3.5" /> : <Bell className="size-3.5" />}
+              {watched ? t('search.watching') : t('search.watch')}
+            </button>
+            <div className="h-4 w-px bg-line" />
+            <span>{t('search.sort')}</span>
+            <select value={sort} onChange={(e) => setFilters({ sort: e.target.value as SortKey })} className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none">
               {SORTS.map((s) => (
                 <option key={s.id} value={s.id}>
                   {t(s.label)}
@@ -167,105 +178,89 @@ export function SearchPage() {
 
       <div className="min-h-0 flex-1 overflow-y-auto">
         {!hasSearched ? (
-          <Welcome enabledCount={enabledCount} onPick={(q) => {
-            setQuery(q)
-            setTimeout(() => void useStore.getState().runSearch())
-          }} />
-        ) : filtered.length === 0 ? (
-          running ? (
-            <ResultSkeleton />
-          ) : (
-            <EmptyState icon={<Search className="size-6" />} title={t('search.nothing')}>
-              {t('search.nothingHint')}
-            </EmptyState>
-          )
+          <Welcome
+            enabledCount={enabledCount}
+            onPick={(q) => {
+              setQuery(q)
+              setTimeout(() => void useStore.getState().runSearch())
+            }}
+          />
         ) : (
-          <div className="px-3 py-2">
-            <div className="grid grid-cols-[minmax(0,1fr)_88px_96px_56px_112px] gap-x-3 px-3 pb-1.5 text-[11px] font-semibold uppercase tracking-wider text-faint">
-              <div>{t('search.col.name')}</div>
-              <div className="text-right">{t('search.col.size')}</div>
-              <div className="text-right">{t('search.col.seeds')}</div>
-              <div className="text-right">{t('search.col.age')}</div>
-              <div />
-            </div>
-            {filtered.slice(0, limit).map((g) => (
-              <ResultRow key={g.key} group={g} />
-            ))}
-            {filtered.length > limit && (
-              <div className="flex justify-center py-4">
-                <button onClick={() => setLimit(limit + PAGE)} className="rounded-lg border border-line px-4 py-2 text-[13px] text-muted hover:bg-hover hover:text-fg">
-                  {t('search.showMore', { n: Math.min(PAGE, filtered.length - limit) })}
-                </button>
+          <>
+            {showTitle && <TitleCard title={title!} groups={groups.filter((g) => isVideo(g.primary.categories))} onResolution={toggleResolution} active={resolutions} />}
+            {filtered.length === 0 ? (
+              running ? (
+                <ResultSkeleton />
+              ) : (
+                <EmptyState icon={<Search className="size-6" />} title={t('search.nothing')}>
+                  {t('search.nothingHint')}
+                </EmptyState>
+              )
+            ) : (
+              <div className="px-3 py-2">
+                <ResultHeader />
+                {filtered.slice(0, limit).map((g) => (
+                  <ResultRow key={g.key} group={g} />
+                ))}
+                {filtered.length > limit && (
+                  <div className="flex justify-center py-4">
+                    <button onClick={() => setLimit(limit + PAGE)} className="rounded-lg border border-line px-4 py-2 text-[13px] text-muted hover:bg-hover hover:text-fg">
+                      {t('search.showMore', { n: Math.min(PAGE, filtered.length - limit) })}
+                    </button>
+                  </div>
+                )}
               </div>
             )}
-          </div>
+          </>
         )}
       </div>
     </div>
   )
 }
 
-function ResultRow({ group }: { group: ReleaseGroup }) {
-  const r = group.primary
-  const { grab, copyMagnet, grabs } = useStore()
-  const state = grabStateOf(grabs, r)
-  const q = group.quality
-  const cat = categoryLabel(r.categories)
-  const others = group.sources.filter((s) => s !== r)
-  const freeleech = r.downloadVolumeFactor === 0
+function TitleCard({ title, groups, active, onResolution }: { title: TitleInfo; groups: ReleaseGroup[]; active: string[]; onResolution: (r: string) => void }) {
+  const buckets = useMemo(() => {
+    const counts: Record<string, number> = {}
+    for (const g of groups) counts[g.quality.resolution ?? 'other'] = (counts[g.quality.resolution ?? 'other'] ?? 0) + 1
+    return counts
+  }, [groups])
 
   return (
-    <div className="group grid grid-cols-[minmax(0,1fr)_88px_96px_56px_112px] items-center gap-x-3 rounded-lg px-3 py-2 hover:bg-panel">
-      <div className="min-w-0">
-        <div className="truncate text-[13.5px] font-medium leading-5 text-fg selectable" title={r.title}>
-          {r.title}
-        </div>
-        <div className="mt-0.5 flex items-center gap-1.5 overflow-hidden text-[12px] text-muted">
-          {q.resolution && <Badge tone={q.resolution === '2160p' ? 'accent' : 'neutral'}>{q.resolution === '2160p' ? '4K' : q.resolution}</Badge>}
-          {q.hdr && <Badge tone="warn">{q.hdr}</Badge>}
-          {q.source && <Badge tone={q.source === 'CAM' ? 'bad' : 'neutral'}>{q.source}</Badge>}
-          {q.codec && <Badge>{q.codec}</Badge>}
-          {freeleech && <Badge tone="good">{t('search.free')}</Badge>}
-          <span className="truncate">
-            <span className="text-fg/80">{r.indexerName}</span>
-            {others.length > 0 && (
-              <span className="text-faint" title={others.map((o) => o.indexerName).join(', ')}>
-                {' '}
-                {t('search.moreSources', { n: others.length })}
-              </span>
-            )}
-            {cat && <span className="text-faint"> · {cat}</span>}
-          </span>
-        </div>
-      </div>
-      <div className="text-right text-[13px] tabular-nums text-muted">{formatBytes(r.size)}</div>
-      <div className="text-right text-[13px] tabular-nums">
-        <span className={cx('font-semibold', (r.seeders ?? 0) > 0 ? 'text-good' : 'text-faint')}>{formatCount(r.seeders)}</span>
-        <span className="text-faint"> / {formatCount(r.leechers)}</span>
-      </div>
-      <div className="text-right text-[13px] tabular-nums text-muted" title={r.publishDate ? new Date(r.publishDate).toLocaleString() : undefined}>
-        {formatAge(r.publishDate)}
-      </div>
-      <div className="flex items-center justify-end gap-0.5">
-        {r.details && (
-          <IconButton label={t('search.openDetails')} onClick={() => void window.open(r.details, '_blank')} className="opacity-0 group-hover:opacity-100">
-            <ExternalLink className="size-4" />
-          </IconButton>
-        )}
-        <IconButton label={t('search.copyMagnet')} onClick={() => void copyMagnet(r)} className="opacity-0 group-hover:opacity-100">
-          <Magnet className="size-4" />
-        </IconButton>
-        <button
-          onClick={() => void grab(r)}
-          disabled={state === 'loading'}
-          title={t('search.download')}
-          className={cx(
-            'inline-flex h-8 w-8 items-center justify-center rounded-lg transition-colors',
-            state === 'done' ? 'bg-good/15 text-good' : state === 'error' ? 'bg-bad/15 text-bad hover:bg-bad/25' : 'bg-accent/15 text-accent hover:bg-accent-2 hover:text-white',
+    <div className="mx-6 mt-4 flex gap-4 rounded-xl border border-line bg-panel p-3">
+      {title.poster && <img src={title.poster} alt="" className="h-36 w-24 shrink-0 rounded-lg object-cover" />}
+      <div className="min-w-0 flex-1">
+        <div className="flex items-baseline gap-2">
+          <h2 className="truncate text-[17px] font-semibold">{title.name}</h2>
+          {title.year && <span className="text-[13px] text-muted">{title.year}</span>}
+          <span className="rounded bg-line/70 px-1.5 text-[11px] font-semibold text-muted">{t(title.type === 'movie' ? 'title.movie' : 'title.series')}</span>
+          {title.rating != null && (
+            <span className="flex items-center gap-1 text-[13px] font-semibold text-warn">
+              <Star className="size-3.5 fill-current" />
+              {title.rating.toFixed(1)}
+            </span>
           )}
-        >
-          {state === 'loading' ? <Loader2 className="size-4 animate-spin" /> : state === 'done' ? <Check className="size-4" /> : state === 'error' ? <CircleAlert className="size-4" /> : <ArrowDownToLine className="size-4" />}
-        </button>
+          {title.url && (
+            <button onClick={() => void window.open(title.url, '_blank')} className="ml-auto flex shrink-0 items-center gap-1 text-[12px] text-muted hover:text-fg">
+              IMDb
+              <ExternalLink className="size-3" />
+            </button>
+          )}
+        </div>
+        {title.genres?.length ? <div className="mt-0.5 text-[12px] text-faint">{title.genres.join(' · ')}</div> : null}
+        {title.description && <p className="mt-1.5 line-clamp-2 text-[12.5px] leading-relaxed text-muted selectable">{title.description}</p>}
+        <div className="mt-2.5 flex flex-wrap items-center gap-1.5">
+          <span className="mr-1 text-[11px] font-semibold uppercase tracking-wider text-faint">{t('title.byQuality')}</span>
+          {RESOLUTIONS.filter((r) => buckets[r]).map((r) => (
+            <Chip key={r} active={active.includes(r)} count={buckets[r]} onClick={() => onResolution(r)}>
+              {resLabel(r)}
+            </Chip>
+          ))}
+          {buckets.other ? (
+            <span className="text-[12px] text-faint">
+              {t('title.other')} {buckets.other}
+            </span>
+          ) : null}
+        </div>
       </div>
     </div>
   )
@@ -377,23 +372,21 @@ function ResultSkeleton() {
 }
 
 function Welcome({ enabledCount, onPick }: { enabledCount: number; onPick: (q: string) => void }) {
-  const recent = recentQueries()
+  const recent = useStore((s) => s.history).slice(0, 8)
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center px-6 pt-24 text-center">
       <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent-2 text-white shadow-lg shadow-accent/20">
         <Sparkles className="size-6" />
       </div>
       <h1 className="mt-5 text-[22px] font-semibold tracking-tight">{t('search.welcome.title')}</h1>
-      <p className="mt-2 text-[13.5px] leading-relaxed text-muted">
-        {t('search.welcome.text', { n: enabledCount })}
-      </p>
+      <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{t('search.welcome.text', { n: enabledCount })}</p>
       {recent.length > 0 && (
         <div className="mt-8 w-full">
           <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">{t('search.recent')}</div>
           <div className="flex flex-wrap justify-center gap-1.5">
-            {recent.map((q) => (
-              <Chip key={q} onClick={() => onPick(q)}>
-                {q}
+            {recent.map((h) => (
+              <Chip key={h.query} onClick={() => onPick(h.query)}>
+                {h.query}
               </Chip>
             ))}
           </div>

@@ -23,6 +23,7 @@ export class RuTracker extends NativeIndexer {
     { name: 'password', type: 'password', label: 'Password' },
     { name: 'usemagnet', type: 'checkbox', label: 'Download magnet links instead of .torrent files', default: false },
     { name: 'uploader', type: 'text', label: 'Only releases by this uploader' },
+    { name: 'pages', type: 'select', label: 'Result pages per search (50 results each)', default: '2', options: { '1': '1', '2': '2', '3': '3', '5': '5' } },
   ]
 
   constructor(opts: NativeOptions) {
@@ -55,6 +56,13 @@ export class RuTracker extends NativeIndexer {
         if (!res.text.includes(LOGGED_IN)) throw new LoginRequiredError('Still not logged in after signing in')
       }
       releases.push(...this.parse(res.text))
+      // Further pages come from the listing's own links (they carry a search_id)
+      if (query.q.trim()) {
+        for (const next of this.nextPageUrls(res.text, url, 'tracker.php').slice(0, this.pageCount() - 1)) {
+          const more = await this.fetch({ url: next, signal })
+          releases.push(...this.parse(more.text))
+        }
+      }
     }
     return releases.sort((a, b) => (b.publishDate ?? '').localeCompare(a.publishDate ?? ''))
   }

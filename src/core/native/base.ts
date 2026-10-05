@@ -105,6 +105,29 @@ export abstract class NativeIndexer implements Indexer {
     return cheerio.load(html)
   }
 
+  /** Result pages to fetch (setting "pages", default 1). */
+  protected pageCount(): number {
+    const n = Number.parseInt(this.setting('pages'), 10)
+    return Number.isFinite(n) && n > 1 ? Math.min(n, 10) : 1
+  }
+
+  /**
+   * Links to further result pages on a phpBB/TorrentPier-style listing: same script,
+   * a higher `start=` offset. Sorted by offset, deduplicated.
+   */
+  protected nextPageUrls(html: string, pageUrl: string, script: string): string[] {
+    const $ = this.load(html)
+    const seen = new Map<number, string>()
+    $(`a[href*="${script}"][href*="start="]`).each((_, el) => {
+      const href = $(el).attr('href')
+      if (!href) return
+      const url = new URL(href.replace(/&amp;/g, '&'), pageUrl)
+      const start = Number(url.searchParams.get('start'))
+      if (start > 0 && !seen.has(start)) seen.set(start, url.href)
+    })
+    return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([, u]) => u)
+  }
+
   protected requireCredentials() {
     if (!this.setting('username') || !this.setting('password')) {
       throw new LoginRequiredError('Fill in username and password, or sign in through the browser')

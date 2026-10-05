@@ -1,9 +1,12 @@
 import { create } from 'zustand'
-import type { AppSettings, IndexerInfo, IndexerStatus, Release, TorrentInfo, UpdateStatus } from '../../shared/api'
+import type { AppSettings, HistoryItem, IndexerInfo, IndexerStatus, Release, ResultFilters, TitleInfo, TorrentInfo, UpdateStatus, Watch } from '../../shared/api'
+import type { ChipId } from '../../core/filters'
+import { groupKey } from '../../core/release'
 import { api } from './api'
 import { resolveLang, setLang, t, translateError, type Lang } from './i18n'
 
-export type Page = 'search' | 'downloads' | 'trackers' | 'settings'
+export type Page = 'search' | 'downloads' | 'library' | 'trackers' | 'settings'
+export type SortKey = 'seeders' | 'newest' | 'size-desc' | 'size-asc' | 'name'
 
 export interface Toast {
   id: number
@@ -25,14 +28,22 @@ interface State {
   // search
   query: string
   /** Category chip ids (client-side filter) */
-  chips: string[]
+  chips: ChipId[]
+  resolutions: string[]
+  minSeeds: number
+  sort: SortKey
+  setFilters: (patch: Partial<Pick<State, 'chips' | 'resolutions' | 'minSeeds' | 'sort'>>) => void
+  /** Movie/series card for the current query */
+  title: TitleInfo | null
   searchId?: string
   running: boolean
   releases: Release[]
   statuses: Record<string, IndexerStatus>
   elapsedMs?: number
   setQuery: (q: string) => void
-  setChips: (c: string[]) => void
+  setChips: (c: ChipId[]) => void
+  /** Current filters, as stored with a watch */
+  currentFilters: () => ResultFilters
   runSearch: () => Promise<void>
   cancelSearch: () => void
 
@@ -48,6 +59,14 @@ interface State {
   loadIndexers: () => Promise<void>
   patchIndexer: (info: IndexerInfo) => void
   saveSettings: (patch: Partial<AppSettings>) => Promise<void>
+
+  // library
+  favoriteKeys: Set<string>
+  toggleFavorite: (r: Release) => Promise<void>
+  watches: Watch[]
+  history: HistoryItem[]
+  loadLibrary: () => Promise<void>
+  watchCurrent: () => Promise<void>
 
   lang: Lang
   update?: UpdateStatus
@@ -80,6 +99,15 @@ export const useStore = create<State>((set, get) => ({
 
   query: '',
   chips: [],
+  resolutions: [],
+  minSeeds: 0,
+  sort: 'seeders',
+  title: null,
+  setFilters: (patch) => set(patch),
+  currentFilters: () => {
+    const { chips, resolutions, minSeeds } = get()
+    return { chips, resolutions, minSeeds }
+  },
   running: false,
   releases: [],
   statuses: {},
@@ -91,9 +119,9 @@ export const useStore = create<State>((set, get) => ({
     if (!query.trim()) return
     if (searchId) void api.cancelSearch(searchId)
     const id = crypto.randomUUID()
-    set({ running: true, releases: [], statuses: {}, elapsedMs: undefined, searchId: id, page: 'search' })
+    set({ running: true, releases: [], statuses: {}, elapsedMs: undefined, searchId: id, page: 'search', title: null })
     await api.search({ searchId: id, q: query })
-    rememberQuery(query)
+    void api.lookupTitle(query).then((title) => get().searchId === id && set({ title }))
   },
   cancelSearch() {
     const { searchId } = get()
@@ -135,6 +163,28 @@ export const useStore = create<State>((set, get) => ({
     applySettings(await api.updateSettings(patch))
   },
 
+  favoriteKeys: new Set(),
+  async toggleFavorite(r) {
+    const on = await api.toggleFavorite(r)
+    const keys = new Set(get().favoriteKeys)
+    if (on) keys.add(groupKey(r))
+    else keys.delete(groupKey(r))
+    set({ favoriteKeys: keys })
+  },
+  watches: [],
+  history: [],
+  async loadLibrary() {
+    const [keys, watches, history] = await Promise.all([api.favoriteKeys(), api.watches(), api.history()])
+    set({ favoriteKeys: new Set(keys), watches, history })
+  },
+  async watchCurrent() {
+    const { query, title } = get()
+    if (!query.trim()) return
+    await api.addWatch(query.trim(), get().currentFilters(), title ? { title: `${title.name}${title.year ? ` (${title.year})` : ''}`, poster: title.poster } : undefined)
+    get().toast({ kind: 'success', text: t('search.watchAdded', { query: query.trim() }), action: { label: t('common.show'), run: () => get().setPage('library') } })
+    await get().loadLibrary()
+  },
+
   lang: 'en',
 
   toasts: [],
@@ -171,6 +221,7 @@ api.onSearchEvent((e) => {
   else if (e.type === 'done') {
     useStore.setState({ running: false, elapsedMs: e.elapsedMs })
     void s.loadIndexers()
+    void s.loadLibrary()
   }
 })
 
@@ -178,29 +229,10 @@ api.onTorrents((torrents) => useStore.setState({ torrents }))
 api.onIndexersChanged(() => void useStore.getState().loadIndexers())
 api.onUpdateStatus((update) => useStore.setState({ update }))
 api.onNavigate((page) => useStore.setState({ page }))
+api.onLibraryChanged(() => void useStore.getState().loadLibrary())
+void useStore.getState().loadLibrary()
 void api.updateStatus().then((update) => useStore.setState({ update }))
 
 void api.getSettings().then(applySettings)
 void api.listTorrents().then((torrents) => useStore.setState({ torrents }))
 void useStore.getState().loadIndexers()
-
-// --- recent searches (per-device convenience) ---
-
-const RECENT_KEY = 'torseek.recent'
-
-export function recentQueries(): string[] {
-  try {
-    return JSON.parse(localStorage.getItem(RECENT_KEY) ?? '[]')
-  } catch {
-    return []
-  }
-}
-
-function rememberQuery(q: string) {
-  try {
-    const list = [q.trim(), ...recentQueries().filter((x) => x.toLowerCase() !== q.trim().toLowerCase())].slice(0, 8)
-    localStorage.setItem(RECENT_KEY, JSON.stringify(list))
-  } catch {
-    /* storage unavailable */
-  }
-}
