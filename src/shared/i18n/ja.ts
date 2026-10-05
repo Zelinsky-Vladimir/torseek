@@ -213,6 +213,7 @@ export const ja: Dict = {
   "upd.downloading": "アップデート {version} をダウンロード中…",
   "upd.ready": "Torseek {version} をインストールする準備ができました",
   "upd.restart": "再起動",
+  "upd.notifyBody": "クリックで今すぐ再起動します。終了時にも自動でインストールされます。",
   "upd.latest": "最新バージョンです",
   "upd.failed": "アップデートの確認に失敗しました: {error}",
   "upd.devBuild": "アップデートはインストール版でのみ利用できます",

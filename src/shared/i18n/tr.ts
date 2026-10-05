@@ -213,6 +213,7 @@ export const tr: Dict = {
   "upd.downloading": "{version} güncellemesi indiriliyor…",
   "upd.ready": "Torseek {version} kuruluma hazır",
   "upd.restart": "Yeniden başlat",
+  "upd.notifyBody": "Şimdi yeniden başlatmak için tıklayın; aksi halde çıkışta yüklenir.",
   "upd.latest": "En son sürümü kullanıyorsunuz",
   "upd.failed": "Güncelleme denetimi başarısız: {error}",
   "upd.devBuild": "Güncellemeler yalnızca kurulu sürümde çalışır",

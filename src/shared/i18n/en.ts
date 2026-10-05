@@ -223,6 +223,7 @@ export const en = {
   "upd.downloading": "Downloading update {version}…",
   "upd.ready": "Torseek {version} is ready to install",
   "upd.restart": "Restart",
+  "upd.notifyBody": "Click to restart now, or it installs when you quit.",
   "upd.latest": "You're on the latest version",
   "upd.failed": "Update check failed: {error}",
   "upd.devBuild": "Updates work in installed builds only",

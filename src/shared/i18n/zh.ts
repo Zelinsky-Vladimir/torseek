@@ -213,6 +213,7 @@ export const zh: Dict = {
   "upd.downloading": "正在下载更新 {version}…",
   "upd.ready": "Torseek {version} 已可安装",
   "upd.restart": "重启",
+  "upd.notifyBody": "点击立即重启，否则将在退出时安装。",
   "upd.latest": "已是最新版本",
   "upd.failed": "检查更新失败：{error}",
   "upd.devBuild": "仅安装版支持更新",

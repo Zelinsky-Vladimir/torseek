@@ -213,6 +213,7 @@ export const fr: Dict = {
   "upd.downloading": "Téléchargement de la mise à jour {version}…",
   "upd.ready": "Torseek {version} est prêt à être installé",
   "upd.restart": "Redémarrer",
+  "upd.notifyBody": "Cliquez pour redémarrer maintenant, sinon la mise à jour s'installera à la fermeture.",
   "upd.latest": "Vous avez la dernière version",
   "upd.failed": "Échec de la vérification des mises à jour : {error}",
   "upd.devBuild": "Les mises à jour ne fonctionnent que dans la version installée",

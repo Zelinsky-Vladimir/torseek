@@ -173,6 +173,13 @@ function notifyComplete(name: string) {
   n.show()
 }
 
+function notifyUpdate(version: string) {
+  if (!Notification.isSupported()) return
+  const n = new Notification({ title: i18n().t('upd.ready', { version }), body: i18n().t('upd.notifyBody'), icon: iconPath() })
+  n.on('click', () => appUpdater.install())
+  n.show()
+}
+
 // --- API implementation (invoked from the renderer via window.api) ----------------
 
 function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
@@ -568,8 +575,19 @@ app.whenReady().then(async () => {
   if (!automation) watcher.start()
   await applyTorznab()
 
-  appUpdater = new AppUpdater((s) => sendToUi(IPC.updateStatus, s))
-  if (appUpdater.supported && !automation) setTimeout(() => void appUpdater.check(), 15_000)
+  let announced: string | undefined
+  appUpdater = new AppUpdater((s) => {
+    sendToUi(IPC.updateStatus, s)
+    if (s.state === 'ready' && s.available && s.available !== announced) {
+      announced = s.available
+      notifyUpdate(s.available)
+    }
+  })
+  if (appUpdater.supported && !automation) {
+    setTimeout(() => void appUpdater.check(), 15_000)
+    // The app can live in the tray for weeks; look again every few hours
+    setInterval(() => appUpdater.status.state !== 'ready' && void appUpdater.check(), 6 * 3600_000)
+  }
 
   registerIpc()
   try {

@@ -213,6 +213,7 @@ export const ko: Dict = {
   "upd.downloading": "업데이트 {version} 다운로드 중…",
   "upd.ready": "Torseek {version} 설치 준비 완료",
   "upd.restart": "다시 시작",
+  "upd.notifyBody": "클릭하면 지금 다시 시작합니다. 종료할 때 자동으로 설치됩니다.",
   "upd.latest": "최신 버전입니다",
   "upd.failed": "업데이트 확인 실패: {error}",
   "upd.devBuild": "업데이트는 설치된 버전에서만 작동합니다",
