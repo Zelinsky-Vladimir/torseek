@@ -95,9 +95,6 @@ export function SettingsPage() {
             <Row label={t('set.titleInfo')} hint={t('set.titleInfoHint')}>
               <Toggle checked={settings.showTitleInfo} onChange={(v) => save({ showTitleInfo: v })} />
             </Row>
-            <Row label={t('set.watchInterval')} hint={t('set.watchIntervalHint')}>
-              <NumberInput value={settings.watchIntervalHours} min={1} max={168} onCommit={(v) => save({ watchIntervalHours: v })} />
-            </Row>
             <Row label={t('set.adult')} hint={t('set.adultHint')}>
               <Toggle checked={settings.showAdult} onChange={(v) => save({ showAdult: v })} />
             </Row>

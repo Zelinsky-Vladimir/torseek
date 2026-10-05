@@ -120,8 +120,6 @@ export interface AppSettings {
   searchOtherLanguages: boolean
   theme: ThemeSetting
   accent: AccentId
-  /** Hours between background re-checks of watched searches */
-  watchIntervalHours: number
   /** Local Torznab API for Sonarr / Radarr */
   torznabEnabled: boolean
   torznabPort: number
@@ -139,37 +137,6 @@ export interface TorznabStatus {
   running: boolean
   port?: number
   error?: string
-}
-
-export interface HistoryItem {
-  query: string
-  results: number
-  searchedAt: number
-}
-
-export interface FavoriteItem {
-  key: string
-  release: Release
-  addedAt: number
-}
-
-export interface Watch {
-  id: number
-  query: string
-  filters: ResultFilters
-  title?: string
-  poster?: string
-  createdAt: number
-  checkedAt?: number
-  /** Unseen new releases */
-  newCount: number
-}
-
-export interface WatchHit {
-  key: string
-  release: Release
-  foundAt: number
-  seen: boolean
 }
 
 export interface TitleInfo {
@@ -195,7 +162,7 @@ export interface UpdateStatus {
   error?: string
 }
 
-export type NavigateTarget = 'search' | 'downloads' | 'library' | 'trackers' | 'settings'
+export type NavigateTarget = 'search' | 'downloads' | 'trackers' | 'settings'
 
 export interface DefinitionsStatus {
   checkedAt: number
@@ -258,24 +225,9 @@ export interface Api {
   /** Main process asks the UI to switch page (e.g. a notification was clicked) */
   onNavigate(cb: (page: NavigateTarget) => void): () => void
 
-  history(): Promise<HistoryItem[]>
-  removeHistory(query: string): Promise<void>
-  clearHistory(): Promise<void>
-  favorites(): Promise<FavoriteItem[]>
-  favoriteKeys(): Promise<string[]>
-  /** Returns whether it is a favorite afterwards */
-  toggleFavorite(release: Release): Promise<boolean>
-  watches(): Promise<Watch[]>
-  addWatch(query: string, filters: ResultFilters, meta?: { title?: string; poster?: string }): Promise<Watch>
-  removeWatch(id: number): Promise<void>
-  checkWatch(id: number): Promise<Watch | undefined>
-  watchHits(id: number): Promise<WatchHit[]>
-  markWatchSeen(id: number): Promise<void>
   lookupTitle(query: string): Promise<TitleInfo | null>
   torznabStatus(): Promise<TorznabStatus>
   regenerateTorznabKey(): Promise<AppSettings>
-  /** Watches / favorites changed in the background */
-  onLibraryChanged(cb: () => void): () => void
   openExternal(url: string): Promise<void>
 }
 
@@ -287,9 +239,8 @@ export const IPC = {
   indexersChanged: 'api:indexers-changed',
   updateStatus: 'api:update-status',
   navigate: 'api:navigate',
-  libraryChanged: 'api:library-changed',
   askSave: 'api:ask-save',
 } as const
 
-export type ApiEvent = 'onSearchEvent' | 'onTorrents' | 'onIndexersChanged' | 'onUpdateStatus' | 'onNavigate' | 'onLibraryChanged' | 'onAskSave'
+export type ApiEvent = 'onSearchEvent' | 'onTorrents' | 'onIndexersChanged' | 'onUpdateStatus' | 'onNavigate' | 'onAskSave'
 export type ApiMethod = Exclude<keyof Api, ApiEvent>

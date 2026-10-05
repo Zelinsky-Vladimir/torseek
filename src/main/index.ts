@@ -14,16 +14,15 @@ import { openSiteWindow } from './site-window'
 import { JsonStore } from './store'
 import { TorrentManager, type TorrentStoreShape } from './torrents'
 import { AppTray } from './tray'
-import { Library } from './library'
 import { lookupTitle } from './titles'
 import { findTitleNames, variantFor } from './title-names'
 import { resolveTheme, THEMES } from '../shared/themes'
-import { Watcher } from './watcher'
-import { groupKey, releaseHash } from '../core/release'
+import { releaseHash } from '../core/release'
 import { scrapeAll, type SwarmStats } from '../core/scrape'
 import { TorznabServer } from '../core/torznab'
 import type { Release as CoreRelease } from '../core/release'
 import { randomBytes } from 'node:crypto'
+import { rm } from 'node:fs/promises'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 const log = (msg: string) => console.log(`[torseek] ${msg}`)
@@ -47,8 +46,6 @@ let torrents: TorrentManager
 let definitions: DefinitionsUpdater
 let appUpdater: AppUpdater
 let tray: AppTray | null = null
-let library: Library
-let watcher: Watcher
 let torznab: TorznabServer | null = null
 let torznabError: string | undefined
 let quitting = false
@@ -194,14 +191,6 @@ function refreshTray() {
   })
 }
 
-function notifyWatch(query: string, count: number) {
-  if (!settings().notifyOnComplete || !Notification.isSupported()) return
-  const { t, tn } = i18n()
-  const n = new Notification({ title: t('notify.watch', { query }), body: tn('notify.watchBody', count), icon: iconPath() })
-  n.on('click', () => showWindow('library'))
-  n.show()
-}
-
 function notifyComplete(name: string) {
   if (!settings().notifyOnComplete || !Notification.isSupported()) return
   const n = new Notification({ title: i18n().t('notify.done'), body: name, icon: iconPath() })
@@ -257,7 +246,6 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       const controller = new AbortController()
       searches.set(searchId, controller)
       const started = Date.now()
-      const keys = new Set<string>()
       const q = req.q.trim()
       const live = settings().liveSeeds ? liveSeedsFor(searchId, () => controller.signal.aborted) : undefined
       const names = settings().searchOtherLanguages ? findTitleNames(q).catch((e) => (log(`title names: ${(e as Error).message}`), null)) : Promise.resolve(null)
@@ -275,7 +263,6 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
             timeoutMs: settings().searchTimeoutSec * 1000,
             signal: controller.signal,
             onResults: (indexerId, releases) => {
-              for (const r of releases) keys.add(groupKey(r))
               live?.add(releases)
               send({ type: 'results', searchId, indexerId, releases })
             },
@@ -290,7 +277,6 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
         .finally(() => {
           live?.flush()
           searches.delete(searchId)
-          if (!controller.signal.aborted) library.addHistory(req.q, keys.size)
           send({ type: 'done', searchId, elapsedMs: Date.now() - started })
         })
       return { searchId }
@@ -427,49 +413,6 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       appUpdater.install()
     },
 
-    async history() {
-      return library.history()
-    },
-    async removeHistory(query) {
-      library.removeHistory(query)
-    },
-    async clearHistory() {
-      library.clearHistory()
-    },
-    async favorites() {
-      return library.favorites()
-    },
-    async favoriteKeys() {
-      return library.favoriteKeys()
-    },
-    async toggleFavorite(release) {
-      const key = groupKey(release)
-      const on = !library.favoriteKeys().includes(key)
-      if (on) library.addFavorite(release)
-      else library.removeFavorite(key)
-      return on
-    },
-    async watches() {
-      return library.watches()
-    },
-    async addWatch(query, filters, meta) {
-      const id = library.addWatch(query, filters, meta)
-      // First check records what already exists, so only later releases count as new
-      void watcher.check(id).then(() => sendToUi(IPC.libraryChanged))
-      return library.watch(id)!
-    },
-    async removeWatch(id) {
-      library.removeWatch(id)
-    },
-    async checkWatch(id) {
-      return watcher.check(id)
-    },
-    async watchHits(id) {
-      return library.hits(id)
-    },
-    async markWatchSeen(id) {
-      library.markSeen(id)
-    },
     async torznabStatus() {
       return { running: !!torznab, port: torznab?.port, error: torznabError }
     },
@@ -614,11 +557,12 @@ app.whenReady().then(async () => {
     liveSeeds: true,
     theme: 'system',
     accent: 'violet',
-    watchIntervalHours: 6,
     torznabEnabled: false,
     torznabPort: 9118,
     torznabApiKey: randomBytes(16).toString('hex'),
   }
+  // The Library (watches, favorites, history) was removed in 0.2.7; drop its database
+  for (const f of ['library.db', 'library.db-wal', 'library.db-shm']) void rm(join(app.getPath('userData'), f), { force: true }).catch(() => {})
   store = new JsonStore<StoreShape>(join(app.getPath('userData'), 'torseek.json'), { settings: defaultSettings, indexers: {}, torrents: [] })
   // Settings added in later versions get their defaults in older profiles
   store.update((d) => {
@@ -666,21 +610,6 @@ app.whenReady().then(async () => {
     setInterval(dailyCheck, 3600_000)
   }
 
-  library = new Library(join(app.getPath('userData'), 'library.db'))
-  watcher = new Watcher(
-    library,
-    indexers,
-    {
-      intervalMs: () => settings().watchIntervalHours * 3600_000,
-      showAdult: () => settings().showAdult,
-      concurrency: () => Math.max(2, Math.floor(settings().searchConcurrency / 2)),
-      timeoutMs: () => settings().searchTimeoutSec * 1000,
-      onNew: (w, fresh) => notifyWatch(w.title ?? w.query, fresh.length),
-      onChecked: () => sendToUi(IPC.libraryChanged),
-    },
-    log,
-  )
-  if (!automation) watcher.start()
   await applyTorznab()
 
   let announced: string | undefined
@@ -745,9 +674,7 @@ app.on('before-quit', (e) => {
   stopping = true
   store.flush()
   tray?.destroy()
-  watcher?.stop()
   void torznab?.stop()
-  library?.close()
   // Closing peer connections can stall on a dead socket; never let that keep the app alive
   const stop = torrents.destroy().catch((e) => log(`shutdown: ${(e as Error).message}`))
   void Promise.race([stop, new Promise((resolve) => setTimeout(resolve, 5000))]).finally(() => app.quit())

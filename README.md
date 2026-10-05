@@ -20,7 +20,7 @@ runs Jackett's community-maintained YAML tracker definitions unchanged.
 definitions/            public Cardigann YAMLs from Jackett (86)
 src/core/
   torznab.ts            Torznab API server (Sonarr / Radarr)
-  filters.ts            result filters shared by the UI and watched searches
+  filters.ts            result filters and relevance
   cardigann/            the engine: template, filters, dates, .NET regex compat, indexer
   categories.ts         Torznab category tree + per-tracker mapping
   search.ts             fan-out with concurrency, per-tracker timeout, streaming callbacks
@@ -51,7 +51,6 @@ node scripts/e2e-trackers.mjs dune --open 1337x   # all public trackers + open a
 npm run sync-definitions      # pull latest definitions from Jackett on GitHub
 node scripts/e2e-smoke.mjs "ubuntu 26.04"    # drive the built app: search -> download
 node scripts/e2e-client.mjs     # file selection, tray (legal test torrent)
-node scripts/e2e-library.mjs    # title card, favorites, watch, history
 node scripts/e2e-torznab.mjs    # Torznab API the way Sonarr calls it
 ```
 
@@ -88,7 +87,6 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
   tracker (RuTracker) keep the site's count
 - trackers checked daily: working ones in your languages switched on, dead ones off
 - **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
-- **favorites**, **search history**, **watched searches**: re-checked in the background, notification on new releases
 
 **Protection pages**
 - Cloudflare / DDoS-Guard: Chromium network stack in one shared session; open the site once in the app's window

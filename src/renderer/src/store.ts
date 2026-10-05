@@ -1,14 +1,14 @@
 import type { AudioFilter, SubsFilter } from '../../core/filters'
 import type { MediaTracks } from '../../core/media-tracks'
 import { create } from 'zustand'
-import type { AppSettings, HistoryItem, IndexerInfo, IndexerStatus, Release, ResultFilters, TitleInfo, TorrentInfo, UpdateStatus, Watch } from '../../shared/api'
+import type { AppSettings, IndexerInfo, IndexerStatus, Release, TitleInfo, TorrentInfo, UpdateStatus } from '../../shared/api'
 import type { ChipId } from '../../core/filters'
-import { groupKey, withLiveSeeds, type ReleaseGroup } from '../../core/release'
+import { withLiveSeeds, type ReleaseGroup } from '../../core/release'
 import { api } from './api'
 import { applyTheme } from './theme'
 import { resolveLang, setLang, t, translateError, type Lang } from './i18n'
 
-export type Page = 'search' | 'downloads' | 'library' | 'trackers' | 'settings'
+export type Page = 'search' | 'downloads' | 'trackers' | 'settings'
 export type SortKey = 'relevance' | 'seeders' | 'newest' | 'size-desc' | 'size-asc' | 'name'
 
 export interface Toast {
@@ -56,8 +56,6 @@ interface State {
   elapsedMs?: number
   setQuery: (q: string) => void
   setChips: (c: ChipId[]) => void
-  /** Current filters, as stored with a watch */
-  currentFilters: () => ResultFilters
   runSearch: () => Promise<void>
   cancelSearch: () => void
 
@@ -77,14 +75,6 @@ interface State {
   /** Open "where to save?" (when asking is on) and run the download with the chosen folder */
   saveRequest?: { title: string; run: (path?: string) => Promise<void> }
   withSaveLocation: (title: string, run: (path?: string) => Promise<void>) => Promise<void>
-
-  // library
-  favoriteKeys: Set<string>
-  toggleFavorite: (r: Release) => Promise<void>
-  watches: Watch[]
-  history: HistoryItem[]
-  loadLibrary: () => Promise<void>
-  watchCurrent: () => Promise<void>
 
   lang: Lang
   update?: UpdateStatus
@@ -137,10 +127,6 @@ export const useStore = create<State>((set, get) => ({
   sort: 'relevance',
   title: null,
   setFilters: (patch) => set(patch),
-  currentFilters: () => {
-    const { chips, resolutions, minSeeds, audio, subs } = get()
-    return { chips, resolutions, minSeeds, audio, subs }
-  },
   running: false,
   releases: [],
   alsoSearched: [],
@@ -205,28 +191,6 @@ export const useStore = create<State>((set, get) => ({
     else await run()
   },
 
-  favoriteKeys: new Set(),
-  async toggleFavorite(r) {
-    const on = await api.toggleFavorite(r)
-    const keys = new Set(get().favoriteKeys)
-    if (on) keys.add(groupKey(r))
-    else keys.delete(groupKey(r))
-    set({ favoriteKeys: keys })
-  },
-  watches: [],
-  history: [],
-  async loadLibrary() {
-    const [keys, watches, history] = await Promise.all([api.favoriteKeys(), api.watches(), api.history()])
-    set({ favoriteKeys: new Set(keys), watches, history })
-  },
-  async watchCurrent() {
-    const { query, title } = get()
-    if (!query.trim()) return
-    await api.addWatch(query.trim(), get().currentFilters(), title ? { title: `${title.name}${title.year ? ` (${title.year})` : ''}`, poster: title.poster } : undefined)
-    get().toast({ kind: 'success', text: t('search.watchAdded', { query: query.trim() }), action: { label: t('common.show'), run: () => get().setPage('library') } })
-    await get().loadLibrary()
-  },
-
   lang: 'en',
 
   toasts: [],
@@ -269,7 +233,6 @@ api.onSearchEvent((e) => {
   else if (e.type === 'done') {
     useStore.setState({ running: false, elapsedMs: e.elapsedMs })
     void s.loadIndexers()
-    void s.loadLibrary()
   }
 })
 
@@ -282,8 +245,6 @@ api.onAskSave(({ magnet, name }) =>
 api.onIndexersChanged(() => void useStore.getState().loadIndexers())
 api.onUpdateStatus((update) => useStore.setState({ update }))
 api.onNavigate((page) => useStore.setState({ page }))
-api.onLibraryChanged(() => void useStore.getState().loadLibrary())
-void useStore.getState().loadLibrary()
 void api.updateStatus().then((update) => useStore.setState({ update }))
 
 void api.getSettings().then(applySettings)

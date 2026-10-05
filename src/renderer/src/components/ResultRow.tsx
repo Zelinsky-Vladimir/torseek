@@ -1,5 +1,5 @@
-import { ArrowDownToLine, AudioLines, Check, CircleAlert, ExternalLink, Loader2, Magnet, Radio, Star } from 'lucide-react'
-import { groupKey, type ReleaseGroup } from '../../../core/release'
+import { ArrowDownToLine, AudioLines, Check, CircleAlert, ExternalLink, Loader2, Magnet, Radio } from 'lucide-react'
+import type { ReleaseGroup } from '../../../core/release'
 import { categoryLabel } from '../categories'
 import { cx, formatAge, formatBytes, formatCount } from '../format'
 import { t } from '../i18n'
@@ -8,7 +8,7 @@ import { Badge, IconButton } from '../ui'
 import { RealTrackBadges, TitleTrackBadges } from './TrackBadges'
 
 // One search result (a release, possibly found on several trackers). Used by the search
-// screen and the library.
+// screen.
 
 export const RESULT_GRID = 'grid grid-cols-[minmax(0,1fr)_88px_96px_56px_144px] gap-x-3'
 
@@ -26,7 +26,7 @@ export function ResultHeader() {
 
 export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight?: boolean }) {
   const r = group.primary
-  const { grab, copyMagnet, grabs, favoriteKeys, toggleFavorite, probes, probeTracks } = useStore()
+  const { grab, copyMagnet, grabs, probes, probeTracks } = useStore()
   // Checked here, or known from the same torrent in Downloads
   const downloaded = useStore((s) => (r.infoHash ? s.torrents.find((x) => x.infoHash === r.infoHash!.toLowerCase())?.tracks : undefined))
   const probe = probes[group.key] ?? (downloaded ? { tracks: downloaded } : undefined)
@@ -35,7 +35,6 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
   const cat = categoryLabel(r.categories)
   const others = group.sources.filter((s) => s !== r)
   const freeleech = r.downloadVolumeFactor === 0
-  const starred = favoriteKeys.has(groupKey(r))
 
   return (
     <div className={cx('group items-center rounded-lg px-3 py-2 hover:bg-panel', RESULT_GRID, highlight && 'bg-accent/5')}>
@@ -91,13 +90,6 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
         </IconButton>
         <IconButton label={t('search.copyMagnet')} onClick={() => void copyMagnet(r)} className="opacity-0 group-hover:opacity-100">
           <Magnet className="size-4" />
-        </IconButton>
-        <IconButton
-          label={starred ? t('search.unstar') : t('search.star')}
-          onClick={() => void toggleFavorite(r)}
-          className={cx(starred ? '!text-warn' : 'opacity-0 group-hover:opacity-100')}
-        >
-          <Star className={cx('size-4', starred && 'fill-current')} />
         </IconButton>
         <button
           onClick={() => void grab(r)}

@@ -37,6 +37,10 @@ const shot = async (name) => {
 }
 
 await page.waitForSelector('input[placeholder^="Search"]')
+// Skip first-run questions: search languages, and "where to save?" on every download
+await page.evaluate(() => window.api.updateSettings({ searchLanguages: ['en', 'ru'], askWhereToSave: false }))
+await page.reload()
+await page.waitForSelector('input[placeholder^="Search"]')
 await page.waitForFunction(() => !document.querySelector('input[placeholder^="Search"]').placeholder.startsWith('Search 0 '))
 await shot('01-welcome')
 

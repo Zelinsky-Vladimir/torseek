@@ -3,8 +3,7 @@ import type { MediaTracks } from './media-tracks'
 import { parentCategory } from './categories'
 import { parseQuality, type Release } from './release'
 
-// Result filters shared by the search UI and background watch checks, so a watched
-// search notifies about exactly what the user would have seen on screen.
+// Result filters for the search screen (and the release-name relevance check).
 
 export type ChipId = 'movies' | 'tv' | 'anime' | 'music' | 'games' | 'software' | 'books' | 'other' | 'xxx'
 
@@ -68,12 +67,6 @@ const fold = (s: string) =>
     .trim()
 
 const words = (s: string) => (fold(s).match(WORD) ?? []).filter((w) => w.length > 1 || /\d/.test(w))
-
-/** Every word of the query (2+ chars) appears in the title — trackers return loose matches. */
-export function titleMatchesQuery(title: string, query: string): boolean {
-  const t = fold(title)
-  return words(query).every((w) => t.includes(w))
-}
 
 /**
  * How well a title answers the search, over the query and its translations:

@@ -9,7 +9,6 @@ const IPC = {
   indexersChanged: 'api:indexers-changed',
   updateStatus: 'api:update-status',
   navigate: 'api:navigate',
-  libraryChanged: 'api:library-changed',
   askSave: 'api:ask-save',
 }
 
@@ -38,8 +37,7 @@ const methods: ApiMethod[] = [
   'getSettings', 'updateSettings', 'chooseDownloadDir', 'chooseFolder', 'openExternal',
   'definitionsStatus', 'updateDefinitions',
   'getMagnetHandler', 'setMagnetHandler', 'updateStatus', 'checkForUpdates', 'installUpdate',
-  'history', 'removeHistory', 'clearHistory', 'favorites', 'favoriteKeys', 'toggleFavorite',
-  'watches', 'addWatch', 'removeWatch', 'checkWatch', 'watchHits', 'markWatchSeen', 'lookupTitle',
+  'lookupTitle',
   'torznabStatus', 'regenerateTorznabKey',
 ]
 
@@ -50,7 +48,6 @@ const api = {
   onIndexersChanged: subscribe<void>(IPC.indexersChanged),
   onUpdateStatus: subscribe<UpdateStatus>(IPC.updateStatus),
   onNavigate: subscribe<NavigateTarget>(IPC.navigate),
-  onLibraryChanged: subscribe<void>(IPC.libraryChanged),
   onAskSave: subscribe<{ magnet: string; name: string }>(IPC.askSave),
 } as unknown as Api
 

@@ -47,7 +47,6 @@ export const en = {
   'search.welcome.title': 'Search every tracker at once',
   'search.welcome.text':
     'One query goes to {n} trackers in parallel. Results stream in as each site answers, duplicates are merged, and downloads start right here.',
-  'search.recent': 'Recent',
 
   // categories
   'cat.movies': 'Movies',
@@ -224,35 +223,10 @@ export const en = {
   "upd.devBuild": "Updates work in installed builds only",
 
   // library: favorites, watches, history, title card
-  "nav.library": "Library",
-  "lib.favorites": "Favorites",
-  "lib.watchlist": "Watching",
-  "lib.history": "History",
-  "lib.favEmptyTitle": "No favorites yet",
-  "lib.favEmptyText": "Star a search result to keep it here for later.",
-  "lib.watchEmptyTitle": "Nothing watched yet",
-  "lib.watchEmptyText": "Search for a show or a movie and press Watch. Torseek re-checks your trackers in the background and notifies you when new releases appear.",
-  "lib.histEmptyTitle": "No searches yet",
-  "lib.clearHistory": "Clear history",
-  "lib.newHits": "{n} new",
-  "lib.checked": "Checked {age} ago",
-  "lib.neverChecked": "First check in progress",
-  "lib.checkNow": "Check now",
-  "lib.markSeen": "Mark as seen",
-  "lib.stopWatching": "Stop watching",
-  "lib.noNewYet": "No new releases since you started watching. Torseek will notify you when something appears.",
-  "search.star": "Add to favorites",
-  "search.unstar": "Remove from favorites",
-  "search.watch": "Watch",
-  "search.watching": "Watching",
-  "search.watchHint": "Get notified when new releases for this search (with the current filters) appear",
-  "search.watchAdded": "Watching “{query}”. You'll be notified about new releases",
   "title.movie": "Movie",
   "title.series": "Series",
   "title.byQuality": "Releases by quality",
   "title.other": "Other",
-  "notify.watch": "New releases: {query}",
-  "notify.watchBody": "{n} new result|{n} new results",
   "set.titleInfo": "Show movie and series info",
   "set.titleInfoHint": "Poster, year and rating above results. The search query is sent to Cinemeta, a public catalog run by Stremio.",
   "search.liveSeeds": "Live from the trackers (the site said {site})",
@@ -312,8 +286,6 @@ export const en = {
   'set.otherLanguages': 'Search in other languages too',
   'set.otherLanguagesHint': 'Type "Dune" and Russian trackers are also searched for "Дюна". Movie and series titles come from Wikidata.',
   'search.alsoSearched': 'also searched: {names}',
-  "set.watchInterval": "Watch check interval",
-  "set.watchIntervalHint": "Hours between background re-checks of watched searches.",
 
   // settings: Torznab API
   "set.section.torznab": "Sonarr / Radarr (Torznab API)",

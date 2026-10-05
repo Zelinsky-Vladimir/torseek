@@ -2,7 +2,7 @@ import { categoryName } from '../../core/categories'
 import { CHIP_MATCHERS, isAdult, type ChipId } from '../../core/filters'
 import { t, type Key } from './i18n'
 
-// UI-level category groups (matchers live in core/filters so watch checks agree with the UI).
+// UI-level category groups (matchers live in core/filters).
 
 export interface CategoryChip {
   id: ChipId

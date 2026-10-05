@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { Bell, BellRing, ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star, X, Languages } from 'lucide-react'
+import { ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star, X, Languages } from 'lucide-react'
 import { matchesFilters, relevance, type AudioFilter, type SubsFilter } from '../../../core/filters'
 import { groupReleases, type ReleaseGroup } from '../../../core/release'
 import type { IndexerStatus, TitleInfo } from '../../../shared/api'
@@ -39,7 +39,7 @@ const isVideo = (cats: number[]) => cats.some((c) => Math.floor(c / 1000) === 2 
 
 export function SearchPage() {
   const { query, setQuery, runSearch, cancelSearch, running, releases, statuses, chips, setChips, settings, indexers } = useStore()
-  const { resolutions, minSeeds, sort, setFilters, title, watches, watchCurrent, audio, subs, probes, searchedQuery, alsoSearched } = useStore()
+  const { resolutions, minSeeds, sort, setFilters, title, audio, subs, probes, searchedQuery, alsoSearched } = useStore()
   const [showLoose, setShowLoose] = useState(false)
   const inputRef = useRef<HTMLInputElement>(null)
   const [limit, setLimit] = useState(PAGE)
@@ -87,7 +87,6 @@ export function SearchPage() {
   }, [groups, scores, chips, resolutions, minSeeds, audio, subs, probes, sort, showAdult, showLoose])
 
   const enabledCount = indexers.filter((i) => i.enabled).length
-  const watched = watches.some((w) => w.query.toLowerCase() === query.trim().toLowerCase())
   // A movie/series card only makes sense when the results are mostly video
   const videoShare = groups.length ? groups.filter((g) => isVideo(g.primary.categories)).length / groups.length : 0
   const showTitle = !!title && hasSearched && (videoShare >= 0.3 || (running && groups.length < 20))
@@ -210,15 +209,6 @@ export function SearchPage() {
             </select>
           </label>
           <div className="ml-auto flex items-center gap-3">
-            <button
-              onClick={() => !watched && void watchCurrent()}
-              title={t('search.watchHint')}
-              className={cx('flex items-center gap-1.5 rounded-md px-2 py-0.5 font-medium', watched ? 'text-accent' : 'hover:bg-hover hover:text-fg')}
-            >
-              {watched ? <BellRing className="size-3.5" /> : <Bell className="size-3.5" />}
-              {watched ? t('search.watching') : t('search.watch')}
-            </button>
-            <div className="h-4 w-px bg-line" />
             <span>{t('search.sort')}</span>
             <select value={sort} onChange={(e) => setFilters({ sort: e.target.value as SortKey })} className="rounded-md border border-line bg-panel px-1.5 py-0.5 text-fg outline-none">
               {SORTS.map((s) => (
@@ -430,7 +420,6 @@ function ResultSkeleton() {
 }
 
 function Welcome({ enabledCount, onPick }: { enabledCount: number; onPick: (q: string) => void }) {
-  const recent = useStore((s) => s.history).slice(0, 8)
   return (
     <div className="mx-auto flex max-w-xl flex-col items-center px-6 pt-24 text-center">
       <div className="flex size-14 items-center justify-center rounded-2xl bg-gradient-to-br from-accent to-accent-2 text-white shadow-lg shadow-accent/20">
@@ -438,18 +427,6 @@ function Welcome({ enabledCount, onPick }: { enabledCount: number; onPick: (q: s
       </div>
       <h1 className="mt-5 text-[22px] font-semibold tracking-tight">{t('search.welcome.title')}</h1>
       <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{t('search.welcome.text', { n: enabledCount })}</p>
-      {recent.length > 0 && (
-        <div className="mt-8 w-full">
-          <div className="mb-2 text-[11px] font-semibold uppercase tracking-wider text-faint">{t('search.recent')}</div>
-          <div className="flex flex-wrap justify-center gap-1.5">
-            {recent.map((h) => (
-              <Chip key={h.query} onClick={() => onPick(h.query)}>
-                {h.query}
-              </Chip>
-            ))}
-          </div>
-        </div>
-      )}
     </div>
   )
 }

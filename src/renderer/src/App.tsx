@@ -1,6 +1,5 @@
 import type { ReactNode } from 'react'
-import { ArrowDown, ArrowUp, CheckCircle2, CircleAlert, Download, Info, Library, Search, Server, Settings, X } from 'lucide-react'
-import { LibraryPage } from './pages/LibraryPage'
+import { ArrowDown, ArrowUp, CheckCircle2, CircleAlert, Download, Info, Search, Server, Settings, X } from 'lucide-react'
 import { api, isMock } from './api'
 import { cx, formatSpeed } from './format'
 import { DownloadsPage } from './pages/DownloadsPage'
@@ -22,7 +21,6 @@ export function App() {
       <main className="min-w-0 flex-1 bg-bg">
         {page === 'search' && <SearchPage />}
         {page === 'downloads' && <DownloadsPage />}
-        {page === 'library' && <LibraryPage />}
         {page === 'trackers' && <TrackersPage />}
         {page === 'settings' && <SettingsPage />}
       </main>
@@ -34,8 +32,7 @@ export function App() {
 }
 
 function Sidebar() {
-  const { page, setPage, torrents, indexers, update, watches } = useStore()
-  const newHits = watches.reduce((s, w) => s + w.newCount, 0)
+  const { page, setPage, torrents, indexers, update } = useStore()
   const active = torrents.filter((t) => t.state === 'downloading' || t.state === 'metadata').length
   const down = torrents.reduce((s, t) => s + t.downloadSpeed, 0)
   const up = torrents.reduce((s, t) => s + t.uploadSpeed, 0)
@@ -56,9 +53,6 @@ function Sidebar() {
         </NavItem>
         <NavItem page="downloads" current={page} onClick={setPage} icon={<Download className="size-4" />} badge={active || undefined}>
           {t('nav.downloads')}
-        </NavItem>
-        <NavItem page="library" current={page} onClick={setPage} icon={<Library className="size-4" />} badge={newHits || undefined}>
-          {t('nav.library')}
         </NavItem>
         <NavItem page="trackers" current={page} onClick={setPage} icon={<Server className="size-4" />} hint={String(enabled)}>
           {t('nav.trackers')}
