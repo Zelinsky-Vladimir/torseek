@@ -63,6 +63,14 @@ function Sidebar() {
           {t('nav.settings')}
         </NavItem>
       </nav>
+      {update?.state === 'downloading' && update.available && (
+        <div className="no-drag mt-auto mb-2 rounded-lg border border-line bg-panel-2 p-2.5 text-[12px]">
+          <div className="leading-snug text-muted">{t('upd.downloading', { version: update.available })}</div>
+          <div className="mt-2 h-1 overflow-hidden rounded-full bg-line">
+            <div className="h-full rounded-full bg-accent transition-[width] duration-500" style={{ width: `${update.percent ?? 0}%` }} />
+          </div>
+        </div>
+      )}
       {update?.state === 'ready' && (
         <div className="no-drag mt-auto mb-2 rounded-lg border border-accent/40 bg-accent/10 p-2.5 text-[12px]">
           <div className="leading-snug text-fg">{t('upd.ready', { version: update.available ?? '' })}</div>
@@ -71,7 +79,7 @@ function Sidebar() {
           </button>
         </div>
       )}
-      <div className={cx('space-y-1 rounded-lg px-2 py-2 text-[12px] tabular-nums text-muted', update?.state !== 'ready' && 'mt-auto')}>
+      <div className={cx('space-y-1 rounded-lg px-2 py-2 text-[12px] tabular-nums text-muted', update?.state !== 'ready' && !(update?.state === 'downloading' && update.available) && 'mt-auto')}>
         <div className="flex items-center gap-1.5">
           <ArrowDown className="size-3.5 text-accent" />
           {formatSpeed(down)}

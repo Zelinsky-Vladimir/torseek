@@ -3,7 +3,8 @@ import updaterPkg from 'electron-updater'
 import type { UpdateStatus } from '../shared/api'
 
 // Self-update from GitHub Releases (electron-updater reads latest*.yml that the release
-// workflow attaches). Downloads in the background, installs on the next restart.
+// workflow attaches). Downloads in the background (only the changed blocks, via the
+// .blockmap files), installs silently over the current copy on restart or quit.
 // Unsigned macOS builds can't self-update; Windows NSIS and Linux AppImage can.
 
 const { autoUpdater } = updaterPkg
@@ -47,6 +48,7 @@ export class AppUpdater {
   }
 
   install() {
-    if (this.status.state === 'ready') autoUpdater.quitAndInstall()
+    // Silent per-user installer: replaces the app in place and starts it again, no wizard
+    if (this.status.state === 'ready') autoUpdater.quitAndInstall(true, true)
   }
 }
