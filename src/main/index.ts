@@ -19,7 +19,8 @@ import { lookupTitle } from './titles'
 import { findTitleNames, variantFor } from './title-names'
 import { resolveTheme, THEMES } from '../shared/themes'
 import { Watcher } from './watcher'
-import { groupKey } from '../core/release'
+import { groupKey, releaseHash } from '../core/release'
+import { scrapeAll, type SwarmStats } from '../core/scrape'
 import { TorznabServer } from '../core/torznab'
 import type { Release as CoreRelease } from '../core/release'
 import { randomBytes } from 'node:crypto'
@@ -99,6 +100,18 @@ async function checkTrackers() {
       }, 1000)
     },
   })
+}
+
+// Recent scrape answers, so re-running a search doesn't ask again for the same torrents
+const seedCache = new Map<string, { stats: SwarmStats; at: number }>()
+async function liveSeeds(hashes: string[]): Promise<Record<string, SwarmStats>> {
+  const fresh = (h: string) => (seedCache.get(h)?.at ?? 0) > Date.now() - 10 * 60_000
+  const missing = hashes.filter((h) => !fresh(h))
+  if (missing.length) {
+    for (const [h, stats] of await scrapeAll(missing)) seedCache.set(h, { stats, at: Date.now() })
+    if (seedCache.size > 20_000) seedCache.clear()
+  }
+  return Object.fromEntries(hashes.flatMap((h) => (seedCache.has(h) ? [[h, seedCache.get(h)!.stats]] : [])))
 }
 
 async function updateDefinitions(): Promise<DefinitionsStatus> {
@@ -211,6 +224,31 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     if (!wc.isDestroyed()) wc.send(IPC.searchEvent, e)
   }
 
+  // Collects info hashes as results stream in and scrapes them in batches
+  const liveSeedsFor = (searchId: string, aborted: () => boolean) => {
+    const pending = new Set<string>()
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const flush = async () => {
+      clearTimeout(timer)
+      timer = undefined
+      const hashes = [...pending]
+      pending.clear()
+      if (!hashes.length || aborted()) return
+      const stats = await liveSeeds(hashes).catch((e) => (log(`scrape: ${(e as Error).message}`), {}))
+      if (Object.keys(stats).length && !aborted()) send({ type: 'seeds', searchId, stats })
+    }
+    return {
+      add(releases: Release[]) {
+        for (const r of releases) {
+          const h = releaseHash(r)
+          if (h) pending.add(h)
+        }
+        if (pending.size) timer ??= setTimeout(() => void flush(), 1200)
+      },
+      flush: () => void flush(),
+    }
+  }
+
   const resolveRelease = (release: Release) => indexers.get(release.indexerId).resolveDownload(release)
 
   return {
@@ -221,6 +259,7 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       const started = Date.now()
       const keys = new Set<string>()
       const q = req.q.trim()
+      const live = settings().liveSeeds ? liveSeedsFor(searchId, () => controller.signal.aborted) : undefined
       const names = settings().searchOtherLanguages ? findTitleNames(q).catch((e) => (log(`title names: ${(e as Error).message}`), null)) : Promise.resolve(null)
       void names.then((n) => {
         if (!n || controller.signal.aborted) return
@@ -237,6 +276,7 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
             signal: controller.signal,
             onResults: (indexerId, releases) => {
               for (const r of releases) keys.add(groupKey(r))
+              live?.add(releases)
               send({ type: 'results', searchId, indexerId, releases })
             },
             onStatus: (status) => send({ type: 'status', searchId, status }),
@@ -248,6 +288,7 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
           },
         )
         .finally(() => {
+          live?.flush()
           searches.delete(searchId)
           if (!controller.signal.aborted) library.addHistory(req.q, keys.size)
           send({ type: 'done', searchId, elapsedMs: Date.now() - started })
@@ -570,6 +611,7 @@ app.whenReady().then(async () => {
     openAtLogin: false,
     showTitleInfo: true,
     searchOtherLanguages: true,
+    liveSeeds: true,
     theme: 'system',
     accent: 'violet',
     watchIntervalHours: 6,

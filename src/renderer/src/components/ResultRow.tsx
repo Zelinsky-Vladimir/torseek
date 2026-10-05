@@ -1,4 +1,4 @@
-import { ArrowDownToLine, AudioLines, Check, CircleAlert, ExternalLink, Loader2, Magnet, Star } from 'lucide-react'
+import { ArrowDownToLine, AudioLines, Check, CircleAlert, ExternalLink, Loader2, Magnet, Radio, Star } from 'lucide-react'
 import { groupKey, type ReleaseGroup } from '../../../core/release'
 import { categoryLabel } from '../categories'
 import { cx, formatAge, formatBytes, formatCount } from '../format'
@@ -64,7 +64,11 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
         </div>
       </div>
       <div className="text-right text-[13px] tabular-nums text-muted">{formatBytes(r.size)}</div>
-      <div className="text-right text-[13px] tabular-nums">
+      <div
+        className="flex items-center justify-end gap-1 text-[13px] tabular-nums"
+        title={r.liveSeeds ? t('search.liveSeeds', { site: r.siteSeeders ?? '—' }) : t('search.siteSeeds')}
+      >
+        {r.liveSeeds && <Radio className="size-3 shrink-0 text-faint" />}
         <span className={cx('font-semibold', (r.seeders ?? 0) > 0 ? 'text-good' : 'text-faint')}>{formatCount(r.seeders)}</span>
         <span className="text-faint"> / {formatCount(r.leechers)}</span>
       </div>

@@ -14,6 +14,9 @@ export interface Release {
   size?: number
   seeders?: number
   leechers?: number
+  /** seeders/leechers above come from the trackers right now; this is what the site said */
+  siteSeeders?: number
+  liveSeeds?: boolean
   grabs?: number
   files?: number
   /** ISO 8601 */
@@ -47,6 +50,32 @@ export function infoHashToMagnet(infoHash: string, title: string): string {
 export function magnetToInfoHash(magnet: string): string | undefined {
   const m = /xt=urn:btih:([a-z0-9]+)/i.exec(magnet)
   return m ? normalizeInfoHash(m[1]) : undefined
+}
+
+/** The torrent's info hash from whatever the site gave us */
+export function releaseHash(r: Pick<Release, 'infoHash' | 'magnet'>): string | undefined {
+  const h = r.infoHash ? normalizeInfoHash(r.infoHash) : r.magnet ? magnetToInfoHash(r.magnet) : undefined
+  return h && /^[0-9a-f]{40}$/.test(h) ? h : undefined
+}
+
+// Open trackers anyone can announce to; the ones we scrape are among them
+const OPEN_TRACKER = /opentrackr|demonii|stealth\.si|torrent\.eu\.org|desync|explodie|qu\.ax|opentracker|openbittorrent|theoks|srv00|dler\.org|bittor\.pw|tracker\.files\.fm|moeking|leechers-paradise|coppersurfer|publicbt|tracker\.ipv6tracker/i
+
+/**
+ * Whether the open trackers see this torrent's swarm. A magnet that names only the
+ * site's own tracker (RuTracker's bt.t-ru.org…) has its peers there; the site's count is
+ * then that tracker's live count and the open trackers would show a fraction of it.
+ */
+export function onOpenTrackers(r: Pick<Release, 'magnet'>): boolean {
+  const trackers = (r.magnet ?? '').split('&').filter((p) => p.startsWith('tr=')).map((p) => decodeURIComponent(p.slice(3)))
+  return trackers.length === 0 || trackers.some((t) => OPEN_TRACKER.test(t))
+}
+
+/** Swap the site's seed counts for live ones from the trackers */
+export function withLiveSeeds<T extends Release>(r: T, stats: Record<string, { seeders: number; leechers: number }>): T {
+  const live = stats[releaseHash(r) ?? '']
+  if (!live || r.liveSeeds || !onOpenTrackers(r)) return r
+  return { ...r, siteSeeders: r.seeders, seeders: live.seeders, leechers: live.leechers, liveSeeds: true }
 }
 
 /** Lower-case hex; some sites publish the 32-char base32 form instead. */

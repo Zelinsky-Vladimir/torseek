@@ -83,6 +83,9 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 - **audio and subtitle filters** (English / Russian / Ukrainian), from release names, and **"check tracks"**: reads the
   real audio/subtitle tracks from the MKV/MP4 header in seconds without downloading the release (also shown in Downloads)
 - loose matches the trackers pad results with are tucked away
+- **real seed counts**: results are scraped on the big open trackers (UDP, 70 torrents per request), so sorting
+  and the seed filter use who is seeding now, not what a site recorded years ago; torrents that live on a site's own
+  tracker (RuTracker) keep the site's count
 - trackers checked daily: working ones in your languages switched on, dead ones off
 - **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
 - **favorites**, **search history**, **watched searches**: re-checked in the background, notification on new releases

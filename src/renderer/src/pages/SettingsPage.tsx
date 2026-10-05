@@ -86,6 +86,9 @@ export function SettingsPage() {
             <Row label={t('set.timeout')} hint={t('set.timeoutHint')}>
               <NumberInput value={settings.searchTimeoutSec} min={5} max={120} onCommit={(v) => save({ searchTimeoutSec: v })} />
             </Row>
+            <Row label={t('set.liveSeeds')} hint={t('set.liveSeedsHint')}>
+              <Toggle checked={settings.liveSeeds} onChange={(v) => save({ liveSeeds: v })} />
+            </Row>
             <Row label={t('set.otherLanguages')} hint={t('set.otherLanguagesHint')}>
               <Toggle checked={settings.searchOtherLanguages} onChange={(v) => save({ searchOtherLanguages: v })} />
             </Row>

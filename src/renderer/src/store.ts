@@ -1,10 +1,9 @@
 import type { AudioFilter, SubsFilter } from '../../core/filters'
 import type { MediaTracks } from '../../core/media-tracks'
-import type { ReleaseGroup } from '../../core/release'
 import { create } from 'zustand'
 import type { AppSettings, HistoryItem, IndexerInfo, IndexerStatus, Release, ResultFilters, TitleInfo, TorrentInfo, UpdateStatus, Watch } from '../../shared/api'
 import type { ChipId } from '../../core/filters'
-import { groupKey } from '../../core/release'
+import { groupKey, withLiveSeeds, type ReleaseGroup } from '../../core/release'
 import { api } from './api'
 import { applyTheme } from './theme'
 import { resolveLang, setLang, t, translateError, type Lang } from './i18n'
@@ -51,6 +50,8 @@ interface State {
   releases: Release[]
   /** The title in other languages, searched too */
   alsoSearched: string[]
+  /** Live seeders / leechers from the trackers, by info hash */
+  liveSeeds: Record<string, { seeders: number; leechers: number }>
   statuses: Record<string, IndexerStatus>
   elapsedMs?: number
   setQuery: (q: string) => void
@@ -143,6 +144,7 @@ export const useStore = create<State>((set, get) => ({
   running: false,
   releases: [],
   alsoSearched: [],
+  liveSeeds: {},
   statuses: {},
   setQuery: (query) => set({ query }),
   setChips: (chips) => set({ chips }),
@@ -152,7 +154,7 @@ export const useStore = create<State>((set, get) => ({
     if (!query.trim()) return
     if (searchId) void api.cancelSearch(searchId)
     const id = crypto.randomUUID()
-    set({ running: true, searchedQuery: query.trim(), releases: [], alsoSearched: [], statuses: {}, elapsedMs: undefined, searchId: id, page: 'search', title: null })
+    set({ running: true, searchedQuery: query.trim(), releases: [], alsoSearched: [], liveSeeds: {}, statuses: {}, elapsedMs: undefined, searchId: id, page: 'search', title: null })
     await api.search({ searchId: id, q: query })
     void api.lookupTitle(query).then((title) => get().searchId === id && set({ title }))
   },
@@ -257,7 +259,11 @@ const truncate = (s: string, n: number) => (s.length > n ? s.slice(0, n - 1) + '
 api.onSearchEvent((e) => {
   const s = useStore.getState()
   if (e.searchId !== s.searchId) return
-  if (e.type === 'results') useStore.setState({ releases: [...s.releases, ...e.releases] })
+  if (e.type === 'results') useStore.setState({ releases: [...s.releases, ...e.releases.map((r) => withLiveSeeds(r, s.liveSeeds))] })
+  else if (e.type === 'seeds') {
+    const liveSeeds = { ...s.liveSeeds, ...e.stats }
+    useStore.setState({ liveSeeds, releases: s.releases.map((r) => withLiveSeeds(r, liveSeeds)) })
+  }
   else if (e.type === 'variants') useStore.setState({ alsoSearched: e.names })
   else if (e.type === 'status') useStore.setState({ statuses: { ...s.statuses, [e.status.indexerId]: e.status } })
   else if (e.type === 'done') {

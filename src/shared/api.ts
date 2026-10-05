@@ -49,6 +49,8 @@ export type SearchEvent =
   | { type: 'done'; searchId: string; elapsedMs: number }
   /** The title in other languages, searched too on trackers of those languages */
   | { type: 'variants'; searchId: string; names: string[] }
+  /** Live seeders / leechers from public trackers, by info hash */
+  | { type: 'seeds'; searchId: string; stats: Record<string, { seeders: number; leechers: number }> }
 
 export type TorrentState = 'metadata' | 'downloading' | 'seeding' | 'paused' | 'done' | 'error'
 
@@ -112,6 +114,8 @@ export interface AppSettings {
   openAtLogin: boolean
   /** Movie/series card from Cinemeta above results */
   showTitleInfo: boolean
+  /** Ask public trackers for real seed counts instead of the sites' old numbers */
+  liveSeeds: boolean
   /** Also search the title's name in each tracker's language (Wikidata) */
   searchOtherLanguages: boolean
   theme: ThemeSetting
