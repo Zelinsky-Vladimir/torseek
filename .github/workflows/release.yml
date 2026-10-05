@@ -48,7 +48,8 @@ jobs:
     name: Build (${{ matrix.os }})
     needs: version
     strategy:
-      fail-fast: true
+      # One platform failing (or GitHub having no runner for it) must not hold back the others
+      fail-fast: false
       matrix:
         os: [windows-latest, macos-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
@@ -79,12 +80,16 @@ jobs:
   publish:
     name: Publish GitHub Release
     needs: [version, build]
+    # Publish whatever platforms built; a missing one just skips this version's update there
+    if: ${{ !cancelled() && needs.version.result == 'success' }}
     runs-on: ubuntu-latest
     steps:
       - uses: actions/download-artifact@v4
         with:
           path: artifacts
           merge-multiple: true
+      - name: Something to publish
+        run: test -n "$(ls artifacts 2>/dev/null)"
       - name: Create release
         env:
           GH_TOKEN: ${{ github.token }}
