@@ -272,18 +272,17 @@ const STATE_STYLE: Record<IndexerStatus['state'], string> = {
   done: 'text-fg',
   error: 'text-bad',
   blocked: 'text-warn',
-  auth: 'text-warn',
   timeout: 'text-warn',
   cancelled: 'text-faint',
 }
 
 function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<string, IndexerStatus>; running: boolean; onCancel: () => void }) {
   const [open, setOpen] = useState(false)
-  const { passChallenge, openTracker } = useStore()
+  const { passChallenge } = useStore()
   const list = Object.values(statuses)
   const finished = list.filter((s) => !['queued', 'running'].includes(s.state)).length
   const withResults = list.filter((s) => s.state === 'done' && (s.count ?? 0) > 0).length
-  const problems = list.filter((s) => ['error', 'blocked', 'auth', 'timeout'].includes(s.state)).length
+  const problems = list.filter((s) => ['error', 'blocked', 'timeout'].includes(s.state)).length
   const sorted = [...list].sort((a, b) => (b.count ?? -1) - (a.count ?? -1) || a.indexerName.localeCompare(b.indexerName))
 
   return (
@@ -316,22 +315,20 @@ function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<str
       {open && (
         <div className="mt-2 flex flex-wrap gap-1.5 pb-1">
           {sorted.map((s) => {
-            const actionable = s.state === 'blocked' || s.state === 'auth'
+            const actionable = s.state === 'blocked'
             return (
               <button
                 key={s.indexerId}
                 disabled={!actionable}
-                onClick={() => (s.state === 'blocked' ? void passChallenge(s.indexerId, s.indexerName) : openTracker(s.indexerId))}
+                onClick={() => void passChallenge(s.indexerId, s.indexerName)}
                 title={
                   s.state === 'blocked'
                     ? t('search.chip.blockedHint')
-                    : s.state === 'auth'
-                      ? t('search.chip.authHint', { reason: translateError(s.error ?? t('search.chip.signInRequired')) })
-                      : s.error
-                        ? translateError(s.error)
-                        : s.state === 'timeout'
-                          ? t('search.chip.timeoutHint')
-                          : undefined
+                    : s.error
+                      ? translateError(s.error)
+                      : s.state === 'timeout'
+                        ? t('search.chip.timeoutHint')
+                        : undefined
                 }
                 className={cx(
                   'inline-flex items-center gap-1.5 rounded-md border border-line bg-panel px-2 py-0.5 text-[12px]',
@@ -342,7 +339,7 @@ function TrackerProgress({ statuses, running, onCancel }: { statuses: Record<str
                 {s.state === 'running' && <Loader2 className="size-3 animate-spin" />}
                 {s.indexerName}
                 <span className="tabular-nums text-faint">
-                  {s.state === 'done' ? s.count : s.state === 'running' || s.state === 'queued' ? '' : s.state === 'auth' ? t('search.chip.signIn') : s.state === 'blocked' ? t('search.chip.unlock') : s.state === 'timeout' ? t('search.chip.timeout') : t('search.chip.error')}
+                  {s.state === 'done' ? s.count : s.state === 'running' || s.state === 'queued' ? '' : s.state === 'blocked' ? t('search.chip.unlock') : s.state === 'timeout' ? t('search.chip.timeout') : t('search.chip.error')}
                 </span>
               </button>
             )

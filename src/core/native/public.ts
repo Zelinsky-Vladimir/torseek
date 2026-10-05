@@ -9,12 +9,6 @@ import { CATEGORIES as KNABEN_CATEGORIES } from './knaben-categories'
 // Ported from Knaben.cs, TorrentsCSV.cs, SubsPlease.cs, Anilibria.cs, AudioBookBay.cs.
 
 abstract class PublicIndexer extends NativeIndexer {
-  readonly loginMethod = undefined
-  readonly canTestLogin = false
-  async login() {}
-  async testLogin() {
-    return true
-  }
   protected json<T>(text: string): T {
     return JSON.parse(text) as T
   }

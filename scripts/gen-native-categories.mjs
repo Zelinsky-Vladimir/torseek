@@ -17,8 +17,6 @@ const catTypes = Object.fromEntries(
 )
 
 for (const [cls, out] of [
-  ['RuTracker', 'rutracker-categories.ts'],
-  ['Toloka', 'toloka-categories.ts'],
   ['Knaben', 'knaben-categories.ts'],
 ]) {
   const src = readFileSync(join(common, `Indexers/Definitions/${cls}.cs`), 'utf8')

@@ -4,7 +4,7 @@ import type { Release } from './release'
 // Fans a query out to many trackers and streams results back as each one answers,
 // instead of waiting for the slowest (Jackett waits up to 40s for all of them).
 
-export type IndexerState = 'queued' | 'running' | 'done' | 'error' | 'blocked' | 'auth' | 'timeout' | 'cancelled'
+export type IndexerState = 'queued' | 'running' | 'done' | 'error' | 'blocked' | 'timeout' | 'cancelled'
 
 export interface IndexerStatus {
   indexerId: string
@@ -44,8 +44,8 @@ export async function searchAll(indexers: Indexer[], query: SearchQuery, opts: S
         opts.onResults(ix.id, releases)
         opts.onStatus({ ...base, state: 'done', count: releases.length, elapsedMs: Date.now() - started })
       } catch (e) {
-        const state: IndexerState = signal?.aborted ? 'cancelled' : timeout.aborted ? 'timeout' : (e as Error)?.name === 'CloudflareError' ? 'blocked' : (e as Error)?.name === 'LoginRequiredError' ? 'auth' : 'error'
-        opts.onStatus({ ...base, state, error: state === 'error' || state === 'auth' ? describeError(e) : undefined, elapsedMs: Date.now() - started })
+        const state: IndexerState = signal?.aborted ? 'cancelled' : timeout.aborted ? 'timeout' : (e as Error)?.name === 'CloudflareError' ? 'blocked' : 'error'
+        opts.onStatus({ ...base, state, error: state === 'error' ? describeError(e) : undefined, elapsedMs: Date.now() - started })
       }
     }
   }

@@ -1,6 +1,6 @@
 // Drives the built app: enables every public tracker, searches, and prints per-tracker
 // status as the UI shows it. Optionally opens one tracker's site window.
-//   npm run build && node scripts/e2e-trackers.mjs [query] [--open <trackerId>] [--signin <trackerId>]
+//   npm run build && node scripts/e2e-trackers.mjs [query] [--open <trackerId>]
 
 import { _electron as electron } from 'playwright-core'
 import { mkdtempSync, mkdirSync } from 'node:fs'
@@ -67,19 +67,6 @@ if (openId) {
     await site.close()
   } else console.log('site window closed by itself (check passed)')
   await page.waitForTimeout(3000)
-}
-
-const signId = flag('--signin')
-if (signId) {
-  const winPromise = app.waitForEvent('window')
-  void page.evaluate((id) => window.api.signInWithBrowser(id), signId).then((r) => console.log('signIn result:', r.ok, r.message ?? ''))
-  const site = await winPromise
-  await site.waitForLoadState('domcontentloaded').catch(() => {})
-  await site.waitForTimeout(5000)
-  await site.screenshot({ path: join(shots, `signin-${signId}.png`) })
-  console.log('sign-in window url:', site.url())
-  await site.close()
-  await page.waitForTimeout(5000)
 }
 
 await app.close()

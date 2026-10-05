@@ -17,7 +17,7 @@ runs Jackett's community-maintained YAML tracker definitions unchanged.
 ## Layout
 
 ```
-definitions/            Cardigann YAMLs from Jackett (all 584)
+definitions/            public Cardigann YAMLs from Jackett (86)
 src/core/
   torznab.ts            Torznab API server (Sonarr / Radarr)
   filters.ts            result filters shared by the UI and watched searches
@@ -27,7 +27,7 @@ src/core/
   release.ts            result model, quality parsing, cross-tracker grouping
   http.ts               HTTP with cookie jar, manual redirects (catches magnet: redirects)
   indexer.ts            the Indexer interface both YAML and hand-written trackers implement
-  native/               hand-written trackers (RuTracker, Toloka) + generated category tables
+  native/               hand-written public trackers (Knaben, Torrents.csv, …) + generated category tables
 src/main/               Electron main: IPC API, tracker manager, torrent manager, JSON store,
                         Chromium networking (net.ts), site windows, definitions updater
 src/preload/            contextBridge -> window.api
@@ -75,16 +75,13 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 ## Features
 
 **Search**
-- all **584 Jackett definitions** (public, semi-private, private) plus hand-written **RuTracker, Toloka, Knaben,
-  Torrents.csv, SubsPlease, Anilibria, AudioBook Bay**
+- **public trackers only** - nothing to register for, no invites: the 86 public Jackett definitions plus
+  hand-written **Knaben, Torrents.csv, SubsPlease, Anilibria, AudioBook Bay**
 - streaming results, duplicates merged across trackers, quality badges, category / quality / seed filters
 - **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
 - **favorites**, **search history**, **watched searches**: re-checked in the background, notification on new releases
-- RuTracker / Toloka fetch several result pages
 
-**Accounts & protection**
-- Jackett-compatible login (form / post / get / cookie / oneurl) with automatic re-login, or **sign in in the browser**
-  (captcha, 2FA); credentials encrypted at rest (Electron safeStorage)
+**Protection pages**
 - Cloudflare / DDoS-Guard: Chromium network stack in one shared session; open the site once in the app's window
 
 **Client**

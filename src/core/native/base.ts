@@ -5,7 +5,6 @@ import type { SettingsField } from '../cardigann/types'
 import { isCloudflareChallenge, type HttpClient, type HttpRequest, type HttpResponse } from '../http'
 import {
   CloudflareError,
-  LoginRequiredError,
   type DownloadTarget,
   type Indexer,
   type IndexerMeta,
@@ -25,8 +24,6 @@ export interface NativeOptions {
 export abstract class NativeIndexer implements Indexer {
   abstract readonly meta: IndexerMeta
   abstract readonly settingsFields: SettingsField[]
-  abstract readonly loginMethod: string | undefined
-  readonly canTestLogin: boolean = true
   readonly categories = new CategoryMap()
   protected encoding = 'utf-8'
   protected requestDelayMs = 0
@@ -50,10 +47,6 @@ export abstract class NativeIndexer implements Indexer {
   get siteLink(): string {
     const link = typeof this.settings.sitelink === 'string' && this.settings.sitelink ? this.settings.sitelink : this.meta.links[0]
     return link.endsWith('/') ? link : link + '/'
-  }
-
-  get loginPageUrl(): string {
-    return this.siteLink
   }
 
   updateSettings(settings: IndexerSettings) {
@@ -105,35 +98,6 @@ export abstract class NativeIndexer implements Indexer {
     return cheerio.load(html)
   }
 
-  /** Result pages to fetch (setting "pages", default 1). */
-  protected pageCount(): number {
-    const n = Number.parseInt(this.setting('pages'), 10)
-    return Number.isFinite(n) && n > 1 ? Math.min(n, 10) : 1
-  }
-
-  /**
-   * Links to further result pages on a phpBB/TorrentPier-style listing: same script,
-   * a higher `start=` offset. Sorted by offset, deduplicated.
-   */
-  protected nextPageUrls(html: string, pageUrl: string, script: string): string[] {
-    const $ = this.load(html)
-    const seen = new Map<number, string>()
-    $(`a[href*="${script}"][href*="start="]`).each((_, el) => {
-      const href = $(el).attr('href')
-      if (!href) return
-      const url = new URL(href.replace(/&amp;/g, '&'), pageUrl)
-      const start = Number(url.searchParams.get('start'))
-      if (start > 0 && !seen.has(start)) seen.set(start, url.href)
-    })
-    return [...seen.entries()].sort((a, b) => a[0] - b[0]).map(([, u]) => u)
-  }
-
-  protected requireCredentials() {
-    if (!this.setting('username') || !this.setting('password')) {
-      throw new LoginRequiredError('Fill in username and password, or sign in through the browser')
-    }
-  }
-
   protected release(fields: Omit<Release, 'indexerId' | 'indexerName' | 'guid' | 'categories'> & { categories?: number[] }): Release {
     return {
       indexerId: this.id,
@@ -145,8 +109,6 @@ export abstract class NativeIndexer implements Indexer {
   }
 
   abstract search(query: SearchQuery, signal?: AbortSignal): Promise<Release[]>
-  abstract login(signal?: AbortSignal): Promise<void>
-  abstract testLogin(signal?: AbortSignal): Promise<boolean>
 
   async resolveDownload(release: Pick<Release, 'link' | 'magnet' | 'title'>, signal?: AbortSignal): Promise<DownloadTarget> {
     if (!release.link) {
@@ -157,13 +119,9 @@ export abstract class NativeIndexer implements Indexer {
     if (res.magnet) return { kind: 'magnet', uri: res.magnet }
     if (res.body[0] !== 0x64 /* 'd' */) {
       if (release.magnet) return { kind: 'magnet', uri: release.magnet }
-      throw new LoginRequiredError('The tracker did not return a .torrent file (signed out?)')
+      throw new Error('Download did not return a torrent file')
     }
     return { kind: 'torrent', data: res.body }
-  }
-
-  async logout() {
-    await this.http.clearCookies(this.siteLink)
   }
 
   async checkAccess(signal?: AbortSignal): Promise<boolean> {

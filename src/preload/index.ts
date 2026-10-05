@@ -30,7 +30,7 @@ const subscribe =
 const methods: ApiMethod[] = [
   'search', 'cancelSearch',
   'listIndexers', 'setIndexerEnabled', 'updateIndexerSettings', 'testIndexer',
-  'signIn', 'signInWithBrowser', 'signOut', 'passChallenge',
+  'passChallenge',
   'download', 'getMagnet', 'addMagnet', 'listTorrents', 'torrentFiles',
   'pauseTorrent', 'resumeTorrent', 'removeTorrent', 'openTorrentFolder', 'openTorrentFile',
   'setFileSelection', 'streamUrl',

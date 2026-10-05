@@ -225,15 +225,6 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     async testIndexer(id) {
       return indexers.test(id)
     },
-    async signIn(id) {
-      return indexers.signIn(id)
-    },
-    async signInWithBrowser(id) {
-      return indexers.signInWithBrowser(id)
-    },
-    async signOut(id) {
-      return indexers.signOut(id)
-    },
     async passChallenge(id) {
       return indexers.passChallenge(id)
     },

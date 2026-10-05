@@ -2,7 +2,7 @@ import { createHash } from 'node:crypto'
 import { mkdir, readFile, readdir, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
 
-// Keeps tracker definitions fresh between app releases. Sites change domains and markup
+// Keeps (public) tracker definitions fresh between app releases. Sites change domains and markup
 // constantly and the Jackett community fixes the YAMLs almost daily, so we pull them
 // straight from the Jackett repo into the user definitions folder (which overrides the
 // bundled copy). One GitHub API call lists the folder with git blob hashes; only files
@@ -15,7 +15,12 @@ interface Manifest {
   checkedAt: number
   /** files we downloaded: name -> git blob sha */
   files: Record<string, string>
+  /** upstream files that aren't public trackers (need an account): name -> sha, so they aren't fetched again */
+  skipped?: Record<string, string>
 }
+
+// Torseek only runs trackers that need no account
+const isPublic = (yml: string) => /^type:\s*public\b/m.test(yml)
 
 export interface UpdateResult {
   checkedAt: number
@@ -65,25 +70,39 @@ export class DefinitionsUpdater {
 
     await mkdir(this.userDir, { recursive: true })
     const manifest = await this.manifest()
-    const result: UpdateResult = { checkedAt: Date.now(), updated: 0, added: 0, removed: 0, total: remote.length }
+    const result: UpdateResult = { checkedAt: Date.now(), updated: 0, added: 0, removed: 0, total: 0 }
 
-    const stale: typeof remote = []
+    const skipped = (manifest.skipped ??= {})
+    const stale: { file: (typeof remote)[number]; existed: boolean }[] = []
     for (const f of remote) {
+      if (skipped[f.name] === f.sha) continue
       const local = await this.localSha(f.name)
-      if (local !== f.sha) stale.push(f)
-      if (local === undefined) result.added++
-      else if (local !== f.sha) result.updated++
+      if (local !== f.sha) stale.push({ file: f, existed: local !== undefined })
     }
 
     const queue = [...stale]
     await Promise.all(
       Array.from({ length: 8 }, async () => {
-        for (let f = queue.shift(); f; f = queue.shift()) {
+        for (let item = queue.shift(); item; item = queue.shift()) {
+          const f = item.file
           const r = await this.fetchImpl(f.download_url)
           if (!r.ok) throw new Error(`download ${f.name}: ${r.status}`)
           const data = Buffer.from(await r.arrayBuffer())
+          if (!isPublic(data.toString('utf8'))) {
+            skipped[f.name] = f.sha
+            // A tracker that went private upstream: drop our copy
+            if (manifest.files[f.name]) {
+              await rm(join(this.userDir, f.name), { force: true })
+              delete manifest.files[f.name]
+              result.removed++
+            }
+            continue
+          }
+          delete skipped[f.name]
           await writeFile(join(this.userDir, f.name), data)
           manifest.files[f.name] = gitBlobSha(data)
+          if (item.existed) result.updated++
+          else result.added++
         }
       }),
     )
@@ -98,6 +117,7 @@ export class DefinitionsUpdater {
       }
     }
 
+    result.total = remote.length - Object.keys(skipped).length
     manifest.checkedAt = result.checkedAt
     await writeFile(join(this.userDir, MANIFEST), JSON.stringify(manifest, null, 1))
     return result

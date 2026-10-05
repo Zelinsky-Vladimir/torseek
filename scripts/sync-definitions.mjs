@@ -21,7 +21,8 @@ const argValue = (name) => {
   return i >= 0 ? args[i + 1] : undefined
 }
 const from = argValue('--from')
-const types = (argValue('--types') ?? 'public,semi-private,private').split(',')
+// Only trackers that need no account: Torseek doesn't support sign-in
+const types = (argValue('--types') ?? 'public').split(',')
 
 const typeOf = (yml) => /^type:\s*([\w-]+)/m.exec(yml)?.[1]
 

@@ -32,7 +32,6 @@ function createMockApi(): Api {
     values: {},
     health: i === 4 ? { state: 'blocked', at: Date.now() } : i === 7 ? { state: 'error', error: 'fetch failed (ECONNRESET)', at: Date.now() } : undefined,
   }))
-  indexers.push({ ...indexers[0], id: 'privatetracker', name: 'SomePrivate', type: 'private', enabled: false, loginMethod: 'form', signedIn: false, settings: [{ name: 'username', type: 'text', label: 'Username' }, { name: 'password', type: 'password', label: 'Password' }], health: undefined })
 
   let settings: AppSettings = { torznabEnabled: false, torznabPort: 9118, torznabApiKey: '0123456789abcdef0123456789abcdef', showTitleInfo: true, watchIntervalHours: 6, closeToTray: true, notifyOnComplete: true, openAtLogin: false, language: 'auto', downloadDir: 'C:\\Users\\me\\Downloads\\Torseek', searchConcurrency: 12, searchTimeoutSec: 25, seedAfterDownload: true, showAdult: false, downloadLimit: 0, uploadLimit: 0 }
   const torrents: TorrentInfo[] = [
@@ -107,20 +106,6 @@ function createMockApi(): Api {
       ix.values = values
       return structuredClone(ix)
     },
-    async signIn(id: string) {
-      await new Promise((r) => setTimeout(r, 700))
-      const ix = indexers.find((i) => i.id === id)!
-      ix.signedIn = true
-      return { ok: true, info: structuredClone(ix) }
-    },
-    async signInWithBrowser(id: string) {
-      return mock.signIn(id)
-    },
-    async signOut(id: string) {
-      const ix = indexers.find((i) => i.id === id)!
-      ix.signedIn = false
-      return structuredClone(ix)
-    },
     async passChallenge(id: string) {
       await new Promise((r) => setTimeout(r, 1200))
       const ix = indexers.find((i) => i.id === id)!
@@ -132,7 +117,7 @@ function createMockApi(): Api {
     },
     async updateDefinitions() {
       await new Promise((r) => setTimeout(r, 1500))
-      return { checkedAt: Date.now(), updating: false, lastResult: { updated: 12, added: 1, removed: 0, total: 584 } }
+      return { checkedAt: Date.now(), updating: false, lastResult: { updated: 12, added: 1, removed: 0, total: 86 } }
     },
     onIndexersChanged() {
       return () => {}

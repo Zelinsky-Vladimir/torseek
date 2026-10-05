@@ -26,13 +26,9 @@ export interface IndexerInfo {
   settings: SettingsField[]
   values: IndexerSettings
   health?: { state: IndexerStatus['state']; error?: string; count?: number; at: number }
-  /** Login method from the definition (form/post/get/cookie/oneurl); undefined = no account needed */
-  loginMethod?: string
-  /** Last known result of a sign-in or login test */
-  signedIn?: boolean
 }
 
-export interface AuthResult {
+export interface ChallengeResult {
   ok: boolean
   message?: string
   info: IndexerInfo
@@ -190,13 +186,8 @@ export interface Api {
   setIndexerEnabled(id: string, enabled: boolean): Promise<IndexerInfo>
   updateIndexerSettings(id: string, values: IndexerSettings): Promise<IndexerInfo>
   testIndexer(id: string): Promise<IndexerInfo>
-  /** Log in with the credentials saved in the tracker's settings */
-  signIn(id: string): Promise<AuthResult>
-  /** Open the site in a window and let the user sign in by hand */
-  signInWithBrowser(id: string): Promise<AuthResult>
-  signOut(id: string): Promise<IndexerInfo>
   /** Open the site so a Cloudflare / DDoS-Guard check can complete */
-  passChallenge(id: string): Promise<AuthResult>
+  passChallenge(id: string): Promise<ChallengeResult>
 
   download(release: Release): Promise<{ infoHash: string }>
   getMagnet(release: Release): Promise<string>

@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AppWindow, ChevronRight, Globe, KeyRound, Lock, LogIn, LogOut, Search, Server, ShieldCheck } from 'lucide-react'
+import { AppWindow, ChevronRight, Globe, Search, Server } from 'lucide-react'
 import { localCategoryName } from '../categories'
 import { t, tn, translateError, type Key } from '../i18n'
 import type { IndexerInfo, IndexerSettings, SettingsField } from '../../../shared/api'
@@ -8,12 +8,10 @@ import { cx } from '../format'
 import { errorText, useStore } from '../store'
 import { Badge, Button, EmptyState, Input, Toggle } from '../ui'
 
-type Filter = 'enabled' | 'public' | 'accounts' | 'problems' | 'all'
+type Filter = 'enabled' | 'problems' | 'all'
 
 const FILTERS: { id: Filter; label: Key }[] = [
   { id: 'enabled', label: 'tr.filter.enabled' },
-  { id: 'public', label: 'tr.filter.public' },
-  { id: 'accounts', label: 'tr.filter.accounts' },
   { id: 'problems', label: 'tr.filter.problems' },
   { id: 'all', label: 'tr.filter.all' },
 ]
@@ -21,13 +19,9 @@ const FILTERS: { id: Filter; label: Key }[] = [
 const matches = (i: IndexerInfo, f: Filter) =>
   f === 'enabled'
     ? i.enabled
-    : f === 'public'
-      ? i.type === 'public'
-      : f === 'accounts'
-        ? i.type !== 'public'
-        : f === 'problems'
-          ? i.enabled && !!i.health && i.health.state !== 'done'
-          : true
+    : f === 'problems'
+      ? i.enabled && !!i.health && i.health.state !== 'done'
+      : true
 
 const langOf = (i: IndexerInfo) => (i.language ?? 'other').split('-')[0].toLowerCase()
 
@@ -103,17 +97,15 @@ export function TrackersPage() {
 
 function HealthDot({ ix }: { ix: IndexerInfo }) {
   const h = ix.health
-  if (!h) return <span className="text-[12px] text-faint">{ix.loginMethod && !ix.signedIn ? t('tr.health.notSignedIn') : t('tr.health.notChecked')}</span>
+  if (!h) return <span className="text-[12px] text-faint">{t('tr.health.notChecked')}</span>
   const label =
     h.state === 'done'
       ? tn('tr.health.results', h.count ?? 0)
       : h.state === 'blocked'
         ? t('tr.health.protected')
-        : h.state === 'auth'
-          ? t('tr.health.auth')
-          : h.state === 'timeout'
-            ? t('tr.health.timeout')
-            : t('tr.health.error')
+        : h.state === 'timeout'
+          ? t('tr.health.timeout')
+          : t('tr.health.error')
   const color = h.state === 'done' ? ((h.count ?? 0) > 0 ? 'bg-good' : 'bg-faint') : h.state === 'error' ? 'bg-bad' : 'bg-warn'
   return (
     <span className="flex items-center justify-end gap-1.5 text-[12px] text-muted" title={h.error ? translateError(h.error) : undefined}>
@@ -135,7 +127,6 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
 
   const toggle = async (v: boolean) => {
     patchIndexer(await api.setIndexerEnabled(ix.id, v))
-    if (v && ix.loginMethod && !ix.signedIn && !open) onToggleOpen()
   }
 
   return (
@@ -147,18 +138,6 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
             <div className="flex items-center gap-2">
               <span className="truncate text-[13.5px] font-medium">{ix.name}</span>
               {ix.language && <Badge>{ix.language.split('-')[0].toUpperCase()}</Badge>}
-              {ix.type !== 'public' && (
-                <Badge tone="warn">
-                  <Lock className="mr-1 size-2.5" />
-                  {t(`tr.type.${ix.type}` as Key) ?? ix.type}
-                </Badge>
-              )}
-              {ix.signedIn && (
-                <Badge tone="good">
-                  <ShieldCheck className="mr-1 size-2.5" />
-                  {t('tr.signedIn')}
-                </Badge>
-              )}
             </div>
             <div className="mt-0.5 truncate text-[12px] text-muted">{ix.unsupported ? t('tr.unsupported', { reason: ix.unsupported }) : ix.description}</div>
           </div>
@@ -193,7 +172,6 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
               </Button>
             </div>
           )}
-          {ix.loginMethod && <AccountSection ix={ix} />}
           {configurable && <SettingsForm ix={ix} />}
           <InfoNotes ix={ix} />
           <div className="flex gap-2">
@@ -228,72 +206,6 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
   )
 }
 
-function AccountSection({ ix }: { ix: IndexerInfo }) {
-  const { patchIndexer, toast } = useStore()
-  const [busy, setBusy] = useState<'form' | 'browser' | 'out' | null>(null)
-  const hasCredentials = ix.settings.some((f) => f.name === 'username' || f.name === 'password')
-  const credentialsSaved = ['username', 'password'].every((n) => !ix.settings.some((f) => f.name === n) || !!ix.values[n])
-
-  const run = async (kind: 'form' | 'browser') => {
-    setBusy(kind)
-    try {
-      const res = kind === 'form' ? await api.signIn(ix.id) : await api.signInWithBrowser(ix.id)
-      patchIndexer(res.info)
-      toast(res.ok ? { kind: 'success', text: res.message ? translateError(res.message) : t('tr.account.ok', { name: ix.name }) } : { kind: 'error', text: `${ix.name}: ${translateError(res.message ?? '')}` })
-    } catch (e) {
-      toast({ kind: 'error', text: errorText(e) })
-    } finally {
-      setBusy(null)
-    }
-  }
-
-  return (
-    <div className="flex items-center gap-3 rounded-lg border border-line bg-panel-2 px-3 py-2.5">
-      <KeyRound className="size-4 text-muted" />
-      <div className="flex-1 text-[12.5px]">
-        {ix.signedIn ? (
-          <span className="text-good">{t('tr.account.signedIn')}</span>
-        ) : (
-          <span className="text-muted">
-            {t('tr.account.needs')} {hasCredentials ? t('tr.account.hintCredentials') : t('tr.account.hintBrowser')}
-          </span>
-        )}
-      </div>
-      {hasCredentials && !ix.signedIn && (
-        <Button
-          size="sm"
-          variant="primary"
-          loading={busy === 'form'}
-          disabled={!credentialsSaved}
-          title={credentialsSaved ? undefined : t('tr.account.saveFirst')}
-          icon={<LogIn className="size-3.5" />}
-          onClick={() => void run('form')}
-        >
-          {t('tr.account.signIn')}
-        </Button>
-      )}
-      <Button size="sm" loading={busy === 'browser'} icon={<AppWindow className="size-3.5" />} onClick={() => void run('browser')}>
-        {ix.signedIn ? t('tr.openSite') : t('tr.account.signInBrowser')}
-      </Button>
-      {ix.signedIn && (
-        <Button
-          size="sm"
-          variant="ghost"
-          loading={busy === 'out'}
-          icon={<LogOut className="size-3.5" />}
-          onClick={async () => {
-            setBusy('out')
-            patchIndexer(await api.signOut(ix.id))
-            setBusy(null)
-          }}
-        >
-          {t('tr.account.signOut')}
-        </Button>
-      )}
-    </div>
-  )
-}
-
 // `info` settings carry hints from the definition (HTML); the Jackett-specific ones
 // (FlareSolverr, how to copy a cookie) don't apply here.
 const SKIP_INFO = new Set(['info_flaresolverr', 'info_cookie', 'info_useragent', 'info_category_8000'])
@@ -323,9 +235,7 @@ function SettingsForm({ ix }: { ix: IndexerInfo }) {
   const set = (name: string, v: IndexerSettings[string]) => setValues({ ...values, [name]: v })
 
   const fields = ix.settings.filter((f) => !f.type?.startsWith('info'))
-  // Common credential fields get localized labels; the rest keep the definition's text
-  const KNOWN = ['username', 'password', 'cookie', 'apikey', 'passkey']
-  const labelOf = (f: SettingsField) => (KNOWN.includes(f.name) ? t(`tr.field.${f.name}` as Key) : (f.label ?? f.name))
+  const labelOf = (f: SettingsField) => (f.name === 'apikey' ? t('tr.field.apikey') : (f.label ?? f.name))
 
   return (
     <div className="space-y-3">

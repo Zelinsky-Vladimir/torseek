@@ -91,26 +91,9 @@ export function translator(lang: Lang) {
 
   /** Engine errors are English; map the ones users actually see onto dictionary keys. */
   const error = (message: string): string => {
-    const fields = (list: string) =>
-      list
-        .split(/,\s*/)
-        .map((f) => {
-          const k = f.toLowerCase().replace(/\s+/g, '')
-          return k === 'username' || k === 'password' || k === 'apikey' || k === 'passkey' ? t(`tr.field.${k}` as Key) : f
-        })
-        .join(', ')
     const patterns: [RegExp, (m: RegExpMatchArray) => string][] = [
-      [/^Fill in (.+?),? or sign in through the browser$/, (m) => t('err.fillIn', { fields: fields(m[1]) })],
-      [/asks for a captcha/i, () => t('err.captcha')],
-      [/^Still not logged in after signing in$/, () => t('err.stillGuest')],
-      [/^Login failed: the site did not accept the credentials$/, () => t('err.badCredentials')],
-      [/^401 Unauthorized/, () => t('err.http401')],
       [/^Blocked by Cloudflare\/DDoS protection$/, () => t('err.cloudflare')],
-      [/^Not signed in$/, () => t('err.notSignedIn')],
       [/^The site still shows its protection page$/, () => t('err.stillProtected')],
-      [/^Signed in \(unverified/, () => t('err.unverified')],
-      [/^Sign in through the browser \(or paste a cookie\)$/, () => t('err.cookie')],
-      [/did not return a \.torrent file \(signed out\?\)/, () => t('err.noTorrentSignedOut')],
       [/^Download did not return a torrent file/, () => t('err.noTorrent')],
       [/^This tracker only provides \.torrent files$/, () => t('err.torrentOnly')],
       [/^Unsupported magnet link$/, () => t('err.badMagnet')],

@@ -3,8 +3,8 @@ import { loadDefinitions } from '../core/cardigann/loader'
 import type { HttpClient } from '../core/http'
 import type { Indexer, IndexerSettings, SearchQuery } from '../core/indexer'
 import { createNativeIndexers } from '../core/native'
-import { describeError, searchAll, type IndexerStatus, type SearchAllOptions } from '../core/search'
-import type { AuthResult, IndexerInfo } from '../shared/api'
+import { searchAll, type IndexerStatus, type SearchAllOptions } from '../core/search'
+import type { ChallengeResult, IndexerInfo } from '../shared/api'
 import type { JsonStore } from './store'
 
 // Trackers that answered both an English and a Russian test query from a plain
@@ -22,7 +22,6 @@ const DEFAULT_ENABLED = new Set([
 export interface IndexerPrefs {
   enabled: boolean
   values: IndexerSettings
-  signedIn?: boolean
 }
 
 export interface IndexerStoreShape {
@@ -37,18 +36,13 @@ export interface Secrets {
   open(sealed: string): string
 }
 
-// Settings that are credentials and must not sit in the JSON file in plain text
-const SECRET_FIELDS = new Set(['password', 'cookie', 'apikey', 'passkey', 'rsskey', 'token', 'pin', '2facode'])
+// Optional API keys some public sites offer; kept out of the JSON file in plain text
+const SECRET_FIELDS = new Set(['password', 'cookie', 'apikey', 'passkey', 'rsskey', 'token'])
 const isSecret = (name: string, type?: string) => type === 'password' || SECRET_FIELDS.has(name.toLowerCase())
 
-export type WindowText = (key: 'signinAuto' | 'signinManual' | 'challenge', name: string) => string
+export type WindowText = (key: 'challenge', name: string) => string
 
-const ENGLISH_TEXT: WindowText = (key, name) =>
-  ({
-    signinAuto: `Sign in to ${name} — this window closes by itself once you're in`,
-    signinManual: `Sign in to ${name}, then close this window`,
-    challenge: `${name}: complete the check if one is shown — this window closes by itself`,
-  })[key]
+const ENGLISH_TEXT: WindowText = (_key, name) => `${name}: complete the check if one is shown — this window closes by itself`
 
 /** Opens a tracker site for the user; resolves 'done' when isDone() turned true. */
 export type SiteOpener = (opts: { url: string; title: string; isDone?: () => Promise<boolean> }) => Promise<'done' | 'closed'>
@@ -83,7 +77,8 @@ export class IndexerManager {
     this.indexers.clear()
     this.unsupported.clear()
     const ixLog = (level: string, msg: string) => level !== 'debug' && this.log(msg)
-    for (const { definition, unsupported } of loaded) {
+    // Only trackers that need no account (old private definitions may linger in the user folder)
+    for (const { definition, unsupported } of loaded.filter((l) => l.definition.type === 'public')) {
       this.indexers.set(definition.id, new CardigannIndexer(definition, { http: this.http, settings: this.prefs(definition.id).values, log: ixLog }))
       if (unsupported) this.unsupported.set(definition.id, unsupported)
     }
@@ -98,7 +93,7 @@ export class IndexerManager {
   private prefs(id: string): IndexerPrefs {
     const stored = this.store.get().indexers[id]
     if (!stored) return { enabled: DEFAULT_ENABLED.has(id), values: {} }
-    return { ...stored, values: this.mapSecrets(id, stored.values, (s) => this.secrets.open(s)) }
+    return { enabled: stored.enabled, values: this.mapSecrets(id, stored.values, (s) => this.secrets.open(s)) }
   }
 
   private setPrefs(id: string, patch: Partial<IndexerPrefs>) {
@@ -127,8 +122,6 @@ export class IndexerManager {
       settings: ix.settingsFields,
       values: prefs.values,
       health: this.health.get(id),
-      loginMethod: ix.loginMethod,
-      signedIn: ix.loginMethod ? prefs.signedIn : undefined,
     }
   }
 
@@ -154,10 +147,8 @@ export class IndexerManager {
   }
 
   recordStatus(s: IndexerStatus) {
-    if (!['done', 'error', 'blocked', 'auth', 'timeout'].includes(s.state)) return
+    if (!['done', 'error', 'blocked', 'timeout'].includes(s.state)) return
     this.health.set(s.indexerId, { state: s.state, error: s.error, count: s.count, at: Date.now() })
-    if (s.state === 'auth' && this.prefs(s.indexerId).signedIn) this.setPrefs(s.indexerId, { signedIn: false })
-    if (s.state === 'done' && this.get(s.indexerId).loginMethod && !this.prefs(s.indexerId).signedIn) this.setPrefs(s.indexerId, { signedIn: true })
   }
 
   async search(query: SearchQuery, opts: SearchAllOptions, indexers = this.enabledIndexers()) {
@@ -176,60 +167,11 @@ export class IndexerManager {
     return this.info(id)
   }
 
-  // --- accounts & protection pages ---
-
-  private authResult(id: string, ok: boolean, message?: string): AuthResult {
-    this.setPrefs(id, { signedIn: ok })
-    if (ok) this.health.delete(id)
-    return { ok, message, info: this.info(id) }
-  }
-
-  async signIn(id: string): Promise<AuthResult> {
-    try {
-      await this.get(id).login(AbortSignal.timeout(45_000))
-      return this.authResult(id, true)
-    } catch (e) {
-      return this.authResult(id, false, describeError(e))
-    }
-  }
-
-  async signInWithBrowser(id: string): Promise<AuthResult> {
-    const ix = this.get(id)
-    const testable = ix.canTestLogin
-    const result = await this.openSite({
-      url: ix.loginPageUrl,
-      title: this.text(testable ? 'signinAuto' : 'signinManual', ix.name),
-      isDone: testable ? () => ix.testLogin(AbortSignal.timeout(15_000)) : undefined,
-    })
-    if (result === 'done') return this.authResult(id, true)
-    // Closed by the user: check once more (also the only check for definitions without a login test)
-    try {
-      const ok = await ix.testLogin(AbortSignal.timeout(20_000))
-      if (!testable) {
-        // Nothing to verify against; the next search will tell
-        this.setPrefs(id, { signedIn: true })
-        return { ok: true, message: 'Signed in (unverified: this tracker has no login check)', info: this.info(id) }
-      }
-      return this.authResult(id, ok, ok ? undefined : 'Not signed in')
-    } catch (e) {
-      return this.authResult(id, false, describeError(e))
-    }
-  }
-
-  async signOut(id: string): Promise<IndexerInfo> {
-    await this.get(id).logout()
-    this.setPrefs(id, { signedIn: false })
-    return this.info(id)
-  }
-
-  async passChallenge(id: string): Promise<AuthResult> {
+  /** Open the site so a Cloudflare / DDoS-Guard check can complete in a real browser window. */
+  async passChallenge(id: string): Promise<ChallengeResult> {
     const ix = this.get(id)
     const check = () => ix.checkAccess(AbortSignal.timeout(15_000))
-    const result = await this.openSite({
-      url: ix.siteLink,
-      title: this.text('challenge', ix.name),
-      isDone: check,
-    })
+    const result = await this.openSite({ url: ix.siteLink, title: this.text('challenge', ix.name), isDone: check })
     const ok = result === 'done' || (await check().catch(() => false))
     if (ok) this.health.delete(id)
     return { ok, message: ok ? undefined : 'The site still shows its protection page', info: this.info(id) }

@@ -2,8 +2,21 @@ import { BrowserWindow } from 'electron'
 import { trackerSession, browserUserAgent } from './net'
 
 // A plain browser window onto a tracker site, in the shared tracker session. The user
-// signs in (or passes a "checking your browser" page) themselves; we only watch for the
-// moment it worked and then close the window. No preload, no Node, sandboxed.
+// passes a "checking your browser" page themselves; we only watch for the moment it
+// worked and then close the window. No preload, no Node, sandboxed.
+//
+// isDone() makes its own request to the site, and doing that while the check is still
+// running restarts it (the user ticks the box, it spins, the box comes back). So we only
+// call it once the page in the window no longer shows a challenge.
+
+// Cloudflare sets window._cf_chl_opt on its interstitial; the rest covers Turnstile and DDoS-Guard
+const CHALLENGE_PROBE = `(() => {
+  if (document.readyState !== 'complete') return true
+  if (window._cf_chl_opt) return true
+  if (document.querySelector('#challenge-form, #challenge-running, #challenge-stage, .cf-turnstile, iframe[src*="challenges.cloudflare.com"], #ddg-captcha, #ddg-l10n-title')) return true
+  return /just a moment|один момент|attention required|checking your browser|verifying you are human|ddos-guard/i.test(document.title)
+})()`
+
 
 export interface SiteWindowOptions {
   parent?: BrowserWindow | null
@@ -46,11 +59,12 @@ export function openSiteWindow(opts: SiteWindowOptions): Promise<'done' | 'close
       if (!win.isDestroyed()) win.close()
       resolve(result)
     }
+    const challengeShown = () => win.webContents.executeJavaScript(CHALLENGE_PROBE, true).then(Boolean, () => true)
     const check = async () => {
-      if (!opts.isDone || checking || finished) return
+      if (!opts.isDone || checking || finished || win.isDestroyed() || win.webContents.isLoading()) return
       checking = true
       try {
-        if (await opts.isDone()) finish('done')
+        if (!(await challengeShown()) && !finished && (await opts.isDone())) finish('done')
       } catch {
         /* not yet */
       } finally {

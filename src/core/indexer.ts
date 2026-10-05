@@ -4,6 +4,7 @@ import type { Release } from './release'
 
 // What the app needs from a tracker, whether it's driven by a Cardigann YAML
 // definition or written by hand in TypeScript (sites the YAML format can't express).
+// Only public trackers (no account) are supported.
 
 export interface SearchQuery {
   q: string
@@ -35,20 +36,12 @@ export interface Indexer {
   readonly categories: CategoryMap
   readonly settingsFields: SettingsField[]
   readonly siteLink: string
-  /** undefined when the site needs no account */
-  readonly loginMethod: string | undefined
-  /** Page to open for a manual sign-in */
-  readonly loginPageUrl: string
-  /** Whether login success can be detected automatically (otherwise the user closes the window) */
-  readonly canTestLogin: boolean
 
   updateSettings(settings: IndexerSettings): void
   search(query: SearchQuery, signal?: AbortSignal): Promise<Release[]>
   resolveDownload(release: Pick<Release, 'link' | 'magnet' | 'title'>, signal?: AbortSignal): Promise<DownloadTarget>
 
-  login(signal?: AbortSignal): Promise<void>
-  testLogin(signal?: AbortSignal): Promise<boolean>
-  logout(): Promise<void>
+  /** False while the site answers with a Cloudflare / DDoS-Guard check page */
   checkAccess(signal?: AbortSignal): Promise<boolean>
 }
 

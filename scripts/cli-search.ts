@@ -30,9 +30,8 @@ const http = new HttpClient({ cookieJar: true })
 
 const log = debug ? (level: string, msg: string) => console.error(`[${level}] ${msg}`) : undefined
 const indexers: Indexer[] = [
-  ...defs.filter((d) => !d.unsupported).map((d) => new CardigannIndexer(d.definition, { http, log })),
-  // hand-written ones need an account except the public ports
-  ...createNativeIndexers({ http, log }).filter((ix) => !ix.loginMethod),
+  ...defs.filter((d) => !d.unsupported && d.definition.type === 'public').map((d) => new CardigannIndexer(d.definition, { http, log })),
+  ...createNativeIndexers({ http, log }),
 ].filter((ix) => (only ? only.includes(ix.id) : ix.meta.type === 'public'))
 
 const results = new Map<string, Release[]>()

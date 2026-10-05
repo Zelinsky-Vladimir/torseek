@@ -69,7 +69,7 @@ describe('renderer wrapper', () => {
 
   it('translates known engine errors and leaves unknown ones alone', () => {
     setLang('ru')
-    expect(translateError('Fill in Username, Password or sign in through the browser')).toBe('Заполните: Логин, Пароль — или войдите через браузер')
+    expect(translateError('fetch failed (ECONNRESET)')).toBe(t('err.connect'))
     setLang('fr')
     expect(translateError('Blocked by Cloudflare/DDoS protection')).toBe('Bloqué par la protection Cloudflare / DDoS-Guard')
     expect(translateError('something unexpected')).toBe('something unexpected')
