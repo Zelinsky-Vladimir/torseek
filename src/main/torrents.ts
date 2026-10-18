@@ -179,8 +179,10 @@ export class TorrentManager {
     })
     torrent.on('ready', () => {
       if (partial) this.applySelection(torrent, this.record(rec.infoHash).deselected ?? [])
-      torrent.files.forEach((f) => f.on('done', () => this.checkComplete(rec.infoHash)))
-      this.checkComplete(rec.infoHash)
+      // Deferred: WebTorrent emits 'done' from inside its own loop and keeps using the torrent
+      // right after; pausing (destroying) it synchronously there crashed the main process
+      torrent.files.forEach((f) => f.on('done', () => setImmediate(() => this.checkComplete(rec.infoHash))))
+      setImmediate(() => this.checkComplete(rec.infoHash))
       if (!this.record(rec.infoHash).tracks) void this.detectTracks(torrent).then((tracks) => tracks && this.patch(rec.infoHash, { tracks }))
     })
     torrent.on('error', (err) => {

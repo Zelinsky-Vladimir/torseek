@@ -22,10 +22,28 @@ import { scrapeAll, type SwarmStats } from '../core/scrape'
 import { TorznabServer } from '../core/torznab'
 import type { Release as CoreRelease } from '../core/release'
 import { randomBytes } from 'node:crypto'
+import { appendFileSync, renameSync, statSync } from 'node:fs'
 import { rm } from 'node:fs/promises'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
-const log = (msg: string) => console.log(`[torseek] ${msg}`)
+// Console in development; a small rotating file in the profile for installed builds
+let logFile: string | undefined
+const log = (msg: string) => {
+  console.log(`[torseek] ${msg}`)
+  if (!logFile) return
+  try {
+    if ((statSync(logFile, { throwIfNoEntry: false })?.size ?? 0) > 2 * 1024 * 1024) renameSync(logFile, logFile + '.old')
+    appendFileSync(logFile, `${new Date().toISOString()} ${msg}
+`)
+  } catch {
+    /* logging must never break anything */
+  }
+}
+
+// A bug deep in a library (WebTorrent, a tracker socket) shouldn't pop an error box over
+// the app and leave downloads in an unknown state: record it and carry on
+process.on('uncaughtException', (e) => log(`uncaught: ${e?.stack ?? e}`))
+process.on('unhandledRejection', (e) => log(`unhandled rejection: ${(e as Error)?.stack ?? e}`))
 
 
 interface StoreShape extends IndexerStoreShape, TorrentStoreShape {
@@ -564,6 +582,7 @@ app.whenReady().then(async () => {
   }
   // The Library (watches, favorites, history) was removed in 0.2.7; drop its database
   for (const f of ['library.db', 'library.db-wal', 'library.db-shm']) void rm(join(app.getPath('userData'), f), { force: true }).catch(() => {})
+  logFile = join(app.getPath('userData'), 'torseek.log')
   store = new JsonStore<StoreShape>(join(app.getPath('userData'), 'torseek.json'), { settings: defaultSettings, indexers: {}, torrents: [] })
   // Settings added in later versions get their defaults in older profiles
   store.update((d) => {
