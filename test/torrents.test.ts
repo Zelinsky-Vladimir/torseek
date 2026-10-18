@@ -25,7 +25,7 @@ describe('torrent manager', () => {
     const seeder = new WebTorrent({ dht: false, tracker: false, lsd: false })
     cleanup.push(() => new Promise<void>((r) => seeder.destroy(() => r())))
     const data = Object.assign(randomBytes(200_000), { name: 'a.bin' })
-    const seeded = await new Promise<{ magnetURI: string; infoHash: string }>((resolve) => seeder.seed(data as never, { path: tmp('seed-') } as never, resolve as never))
+    const seeded = await new Promise<{ magnetURI: string; infoHash: string }>((resolve) => seeder.seed(data, { path: tmp('seed-') }, (t) => resolve(t as unknown as { magnetURI: string; infoHash: string })))
 
     const store = new JsonStore<TorrentStoreShape>(join(tmp('store-'), 's.json'), { torrents: [] })
     let completed = 0

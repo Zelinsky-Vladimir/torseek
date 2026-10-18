@@ -41,6 +41,7 @@ declare module 'webtorrent' {
     interface Instance extends EventEmitter {
       torrents: Torrent[]
       dht?: unknown
+      seed(input: Uint8Array | Uint8Array[], opts?: { path?: string; name?: string }, onSeed?: (t: Torrent) => void): Torrent
       add(torrentId: string | Uint8Array, opts?: { path?: string; deselect?: boolean; announce?: string[] }, onTorrent?: (t: Torrent) => void): Torrent
       throttleDownload(rate: number): void
       throttleUpload(rate: number): void
