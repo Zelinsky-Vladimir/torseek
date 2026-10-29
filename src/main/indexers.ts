@@ -16,11 +16,18 @@ const DEFAULT_ENABLED = new Set([
   'torrent-pirat', 'torrent9', 'torrentdownload', 'torrentdownloads', 'torrentgalaxyclone', 'torrentkitty',
   'world-torrent', 'yts', 'zamundalife',
   // hand-written public ports
-  'knaben', 'torrentscsv', 'subsplease', 'anilibria', 'audiobookbay',
+  'knaben', 'torrentscsv', 'subsplease', 'anilibria', 'audiobookbay', 'ext',
 ])
+
+export type Priority = 'high' | 'normal' | 'low'
+
+// Trackers that start with high priority (searched first, preferred copy of a release)
+const DEFAULT_PRIORITY: Record<string, Priority> = { thepiratebay: 'high', ext: 'high' }
+const PRIORITY_RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 }
 
 export interface IndexerPrefs {
   enabled: boolean
+  priority?: Priority
   values: IndexerSettings
   /** The user switched it on/off themselves: automatic management leaves it alone */
   manual?: boolean
@@ -104,8 +111,9 @@ export class IndexerManager {
 
   private prefs(id: string): IndexerPrefs {
     const stored = this.store.get().indexers[id]
-    if (!stored) return { enabled: DEFAULT_ENABLED.has(id), values: {} }
-    return { ...stored, values: this.mapSecrets(id, stored.values, (s) => this.secrets.open(s)) }
+    const priority = stored?.priority ?? DEFAULT_PRIORITY[id] ?? 'normal'
+    if (!stored) return { enabled: DEFAULT_ENABLED.has(id), values: {}, priority }
+    return { ...stored, priority, values: this.mapSecrets(id, stored.values, (s) => this.secrets.open(s)) }
   }
 
   private setPrefs(id: string, patch: Partial<IndexerPrefs>) {
@@ -133,12 +141,18 @@ export class IndexerManager {
       categories: ix.categories.topLevel(),
       settings: ix.settingsFields,
       values: prefs.values,
+      priority: prefs.priority ?? 'normal',
       health: this.health.get(id),
     }
   }
 
   list(): IndexerInfo[] {
     return [...this.indexers.keys()].map((id) => this.info(id)).sort((a, b) => a.name.localeCompare(b.name))
+  }
+
+  setPriority(id: string, priority: Priority): IndexerInfo {
+    this.setPrefs(id, { priority })
+    return this.info(id)
   }
 
   /** From the UI: the user's choice sticks, background checks won't flip it */
@@ -197,7 +211,8 @@ export class IndexerManager {
       this.setPrefs(s.indexerId, { enabled: wanted.size === 0 || wanted.has(lang), fails: 0 })
     } else if (s.state === 'error' || s.state === 'timeout') {
       const fails = (prefs.fails ?? 0) + 1
-      this.setPrefs(s.indexerId, { fails, enabled: fails >= 2 ? false : prefs.enabled })
+      // A tracker the user prioritised stays on through a bad day
+      this.setPrefs(s.indexerId, { fails, enabled: fails >= 2 && prefs.priority !== 'high' ? false : prefs.enabled })
     }
   }
 
@@ -211,9 +226,11 @@ export class IndexerManager {
     return this.info(id)
   }
 
+  /** High-priority trackers first, so their results arrive first */
   enabledIndexers(): Indexer[] {
     return this.list()
       .filter((i) => i.enabled)
+      .sort((a, b) => PRIORITY_RANK[a.priority ?? 'normal'] - PRIORITY_RANK[b.priority ?? 'normal'])
       .map((i) => this.get(i.id))
   }
 

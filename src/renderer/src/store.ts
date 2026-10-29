@@ -67,6 +67,8 @@ interface State {
 
   // data
   indexers: IndexerInfo[]
+  /** Trackers with high priority */
+  priorityIds: Set<string>
   torrents: TorrentInfo[]
   settings?: AppSettings
   loadIndexers: () => Promise<void>
@@ -176,12 +178,13 @@ export const useStore = create<State>((set, get) => ({
   },
 
   indexers: [],
+  priorityIds: new Set(),
   torrents: [],
   async loadIndexers() {
-    set({ indexers: await api.listIndexers() })
+    set(withPriorities(await api.listIndexers()))
   },
   patchIndexer(info) {
-    set((s) => ({ indexers: s.indexers.map((i) => (i.id === info.id ? info : i)) }))
+    set((s) => withPriorities(s.indexers.map((i) => (i.id === info.id ? info : i))))
   },
   async saveSettings(patch) {
     applySettings(await api.updateSettings(patch))
@@ -208,6 +211,8 @@ export const grabStateOf = (grabs: Record<string, GrabState>, r: Release) => gra
 
 // Electron wraps errors thrown in the main process: "Error invoking remote method 'x': Error: msg"
 export const errorText = (e: unknown) => translateError(String((e as Error)?.message ?? e).replace(/^Error invoking remote method '[^']+': (\w*Error: )?/, ''))
+
+const withPriorities = (indexers: IndexerInfo[]) => ({ indexers, priorityIds: new Set(indexers.filter((i) => i.priority === 'high').map((i) => i.id)) })
 
 function applySettings(settings: AppSettings) {
   const lang = resolveLang(settings.language)

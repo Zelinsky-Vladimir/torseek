@@ -30,6 +30,7 @@ function createMockApi(): Api {
       { name: 'freeleech', type: 'checkbox', label: 'Search freeleech only', default: false },
     ],
     values: {},
+    priority: i === 2 ? ('high' as const) : ('normal' as const),
     health: i === 4 ? { state: 'blocked', at: Date.now() } : i === 7 ? { state: 'error', error: 'fetch failed (ECONNRESET)', at: Date.now() } : undefined,
   }))
 
@@ -127,6 +128,11 @@ function createMockApi(): Api {
     },
     onIndexersChanged() {
       return () => {}
+    },
+    async setIndexerPriority(id: string, priority: IndexerInfo['priority']) {
+      const ix = indexers.find((i) => i.id === id)!
+      ix.priority = priority
+      return structuredClone(ix)
     },
     async testIndexer(id: string) {
       await new Promise((r) => setTimeout(r, 800))

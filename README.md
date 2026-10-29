@@ -76,7 +76,7 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 
 **Search**
 - **public trackers only** - nothing to register for, no invites: the 86 public Jackett definitions plus
-  hand-written **Knaben, Torrents.csv, SubsPlease, Anilibria, AudioBook Bay**
+  hand-written **Knaben, Torrents.csv, SubsPlease, Anilibria, AudioBook Bay, EXT (ext.to)**
 - **search in other languages**: type «дюна» and English trackers also get "Dune", Chinese ones "沙丘" (titles from Wikidata)
 - streaming results, duplicates merged across trackers, quality badges, category / quality / seed filters
 - **audio and subtitle filters** (English / Russian / Ukrainian), from release names, and **"check tracks"**: reads the
@@ -85,6 +85,8 @@ Right-to-left languages (Arabic, Hebrew) need layout work first.
 - **real seed counts**: results are scraped on the big open trackers (UDP, 70 torrents per request), so sorting
   and the seed filter use who is seeding now, not what a site recorded years ago; torrents that live on a site's own
   tracker (RuTracker) keep the site's count
+- **tracker priority** (high / normal / low): priority trackers are searched first, rank first under "relevance",
+  and their copy of a release is the one downloaded; The Pirate Bay and EXT start as priority
 - trackers checked daily: working ones in your languages switched on, dead ones off
 - **movie & series cards** (poster, year, IMDb rating, releases by quality) from Cinemeta - optional
 

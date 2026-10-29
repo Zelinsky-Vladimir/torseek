@@ -60,7 +60,12 @@ export function SearchPage() {
   useEffect(() => setLimit(PAGE), [releases.length === 0, chips, resolutions, minSeeds, sort, audio, subs])
   useEffect(() => setShowLoose(false), [searchedQuery])
 
-  const groups = useMemo(() => [...groupReleases(releases).values()], [releases])
+  // Tracker priority: high 0, normal 1, low 2
+  const rankOf = useMemo(() => {
+    const ranks = new Map(indexers.map((i) => [i.id, i.priority === 'high' ? 0 : i.priority === 'low' ? 2 : 1]))
+    return (indexerId: string) => ranks.get(indexerId) ?? 1
+  }, [indexers])
+  const groups = useMemo(() => [...groupReleases(releases, undefined, (r) => rankOf(r.indexerId)).values()], [releases, rankOf])
   const showAdult = !!settings?.showAdult
 
   const visibleChips = CATEGORY_CHIPS.filter((c) => !c.adult || showAdult)
@@ -83,8 +88,10 @@ export function SearchPage() {
     // Nothing matches by words (the site found it by something else): don't hide everything
     const shown = showLoose || relevant.length === 0 ? matching : relevant
     const tier = (g: ReleaseGroup) => (sort === 'relevance' ? score(g) : Math.min(1, score(g)))
-    return { filtered: shown.sort((a, b) => tier(b) - tier(a) || SORTERS[sort](a, b)), hiddenLoose: matching.length - shown.length }
-  }, [groups, scores, chips, resolutions, minSeeds, audio, subs, probes, sort, showAdult, showLoose])
+    // Under "relevance", results from priority trackers come first within each tier
+    const pri = (g: ReleaseGroup) => (sort === 'relevance' ? rankOf(g.primary.indexerId) : 0)
+    return { filtered: shown.sort((a, b) => tier(b) - tier(a) || pri(a) - pri(b) || SORTERS[sort](a, b)), hiddenLoose: matching.length - shown.length }
+  }, [groups, scores, chips, resolutions, minSeeds, audio, subs, probes, sort, showAdult, showLoose, rankOf])
 
   const enabledCount = indexers.filter((i) => i.enabled).length
   // A movie/series card only makes sense when the results are mostly video

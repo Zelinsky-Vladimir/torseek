@@ -28,6 +28,8 @@ export interface IndexerInfo {
   settings: SettingsField[]
   values: IndexerSettings
   health?: { state: IndexerStatus['state']; error?: string; count?: number; at: number }
+  /** high: searched first, its copy of a release preferred; low: after the others */
+  priority: 'high' | 'normal' | 'low'
 }
 
 export interface ChallengeResult {
@@ -180,6 +182,7 @@ export interface Api {
   setIndexerEnabled(id: string, enabled: boolean): Promise<IndexerInfo>
   updateIndexerSettings(id: string, values: IndexerSettings): Promise<IndexerInfo>
   testIndexer(id: string): Promise<IndexerInfo>
+  setIndexerPriority(id: string, priority: IndexerInfo['priority']): Promise<IndexerInfo>
   /** Open the site so a Cloudflare / DDoS-Guard check can complete */
   passChallenge(id: string): Promise<ChallengeResult>
   /** Test every tracker in the background (progress via onIndexersChanged) */

@@ -315,6 +315,9 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     async testIndexer(id) {
       return indexers.test(id)
     },
+    async setIndexerPriority(id, priority) {
+      return indexers.setPriority(id, priority)
+    },
     async passChallenge(id) {
       return indexers.passChallenge(id)
     },

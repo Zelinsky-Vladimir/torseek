@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
-import { AppWindow, ChevronRight, Globe, Search, Server } from 'lucide-react'
+import { AppWindow, ChevronRight, Globe, Search, Server, Star } from 'lucide-react'
 import { localCategoryName } from '../categories'
 import { t, tn, translateError, type Key } from '../i18n'
 import type { IndexerInfo, IndexerSettings, SettingsField } from '../../../shared/api'
@@ -8,10 +8,11 @@ import { cx } from '../format'
 import { errorText, useStore } from '../store'
 import { Badge, Button, EmptyState, Input, Toggle } from '../ui'
 
-type Filter = 'enabled' | 'problems' | 'all'
+type Filter = 'enabled' | 'priority' | 'problems' | 'all'
 
 const FILTERS: { id: Filter; label: Key }[] = [
   { id: 'enabled', label: 'tr.filter.enabled' },
+  { id: 'priority', label: 'tr.filter.priority' },
   { id: 'problems', label: 'tr.filter.problems' },
   { id: 'all', label: 'tr.filter.all' },
 ]
@@ -19,7 +20,9 @@ const FILTERS: { id: Filter; label: Key }[] = [
 const matches = (i: IndexerInfo, f: Filter) =>
   f === 'enabled'
     ? i.enabled
-    : f === 'problems'
+    : f === 'priority'
+      ? i.priority === 'high'
+      : f === 'problems'
       ? i.enabled && !!i.health && i.health.state !== 'done'
       : true
 
@@ -138,6 +141,13 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
             <div className="flex items-center gap-2">
               <span className="truncate text-[13.5px] font-medium">{ix.name}</span>
               {ix.language && <Badge>{ix.language.split('-')[0].toUpperCase()}</Badge>}
+              {ix.priority === 'high' && (
+                <Badge tone="warn" title={t('tr.priorityHint')}>
+                  <Star className="mr-1 size-2.5 fill-current" />
+                  {t('tr.priority.high')}
+                </Badge>
+              )}
+              {ix.priority === 'low' && <Badge title={t('tr.priorityHint')}>{t('tr.priority.low')}</Badge>}
             </div>
             <div className="mt-0.5 truncate text-[12px] text-muted">{ix.unsupported ? t('tr.unsupported', { reason: ix.unsupported }) : ix.description}</div>
           </div>
@@ -172,6 +182,7 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
               </Button>
             </div>
           )}
+          <PriorityField ix={ix} />
           {configurable && <SettingsForm ix={ix} />}
           <InfoNotes ix={ix} />
           <div className="flex gap-2">
@@ -203,6 +214,37 @@ function TrackerRow({ ix, open, onToggleOpen }: { ix: IndexerInfo; open: boolean
         </div>
       )}
     </div>
+  )
+}
+
+const PRIORITIES: IndexerInfo['priority'][] = ['high', 'normal', 'low']
+
+// High: searched first, and its copy of a release is the one shown and downloaded
+function PriorityField({ ix }: { ix: IndexerInfo }) {
+  const { patchIndexer, toast } = useStore()
+  return (
+    <Field label={t('tr.priority')}>
+      <div className="flex items-center gap-3">
+        <div className="flex items-center gap-0.5 rounded-lg bg-panel-2 p-0.5 text-[12.5px]">
+          {PRIORITIES.map((p) => (
+            <button
+              key={p}
+              onClick={async () => {
+                try {
+                  patchIndexer(await api.setIndexerPriority(ix.id, p))
+                } catch (e) {
+                  toast({ kind: 'error', text: errorText(e) })
+                }
+              }}
+              className={cx('rounded-md px-2.5 py-1', ix.priority === p ? 'bg-hover text-fg' : 'text-muted hover:text-fg')}
+            >
+              {t(`tr.priority.${p}` as Key)}
+            </button>
+          ))}
+        </div>
+        <span className="text-[12px] text-faint">{t('tr.priorityHint')}</span>
+      </div>
+    </Field>
   )
 }
 

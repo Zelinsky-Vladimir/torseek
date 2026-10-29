@@ -141,7 +141,11 @@ export function groupKey(r: Release): string {
   return `t:${r.title.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '')}:${r.size ?? ''}`
 }
 
-export function groupReleases(releases: Release[], existing = new Map<string, ReleaseGroup>()): Map<string, ReleaseGroup> {
+/**
+ * rank: lower = preferred tracker (the user's priority). The group's primary copy, the one
+ * shown and downloaded, comes from the most preferred tracker, then the best seeded.
+ */
+export function groupReleases(releases: Release[], existing = new Map<string, ReleaseGroup>(), rank: (r: Release) => number = () => 0): Map<string, ReleaseGroup> {
   for (const r of releases) {
     const key = groupKey(r)
     const g = existing.get(key)
@@ -151,7 +155,8 @@ export function groupReleases(releases: Release[], existing = new Map<string, Re
     }
     if (g.sources.some((s) => s.indexerId === r.indexerId && s.guid === r.guid)) continue
     g.sources.push(r)
-    if ((r.seeders ?? 0) > (g.primary.seeders ?? 0)) g.primary = r
+    const better = rank(r) - rank(g.primary) || (g.primary.seeders ?? 0) - (r.seeders ?? 0)
+    if (better < 0) g.primary = r
   }
   return existing
 }

@@ -1,4 +1,4 @@
-import { ArrowDownToLine, AudioLines, Check, CircleAlert, ExternalLink, Loader2, Magnet, Radio } from 'lucide-react'
+import { ArrowDownToLine, AudioLines, Check, CircleAlert, ExternalLink, Loader2, Magnet, Radio, Star } from 'lucide-react'
 import type { ReleaseGroup } from '../../../core/release'
 import { categoryLabel } from '../categories'
 import { cx, formatAge, formatBytes, formatCount } from '../format'
@@ -27,6 +27,7 @@ export function ResultHeader() {
 export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight?: boolean }) {
   const r = group.primary
   const { grab, copyMagnet, grabs, probes, probeTracks } = useStore()
+  const priorityIds = useStore((s) => s.priorityIds)
   // Checked here, or known from the same torrent in Downloads
   const downloaded = useStore((s) => (r.infoHash ? s.torrents.find((x) => x.infoHash === r.infoHash!.toLowerCase())?.tracks : undefined))
   const probe = probes[group.key] ?? (downloaded ? { tracks: downloaded } : undefined)
@@ -51,6 +52,7 @@ export function ResultRow({ group, highlight }: { group: ReleaseGroup; highlight
           {probe?.tracks ? <RealTrackBadges tracks={probe.tracks} /> : <TitleTrackBadges audio={group.audio} />}
           {freeleech && <Badge tone="good">{t('search.free')}</Badge>}
           <span className="truncate">
+            {priorityIds.has(r.indexerId) && <Star className="mr-0.5 inline size-3 -translate-y-px fill-current text-warn" aria-label={t('tr.priority.high')} />}
             <span className="text-fg/80">{r.indexerName}</span>
             {others.length > 0 && (
               <span className="text-faint" title={others.map((o) => o.indexerName).join(', ')}>
