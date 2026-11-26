@@ -54,7 +54,7 @@ export type SearchEvent =
   /** Live seeders / leechers from public trackers, by info hash */
   | { type: 'seeds'; searchId: string; stats: Record<string, { seeders: number; leechers: number }> }
 
-export type TorrentState = 'metadata' | 'downloading' | 'seeding' | 'paused' | 'done' | 'error'
+export type TorrentState = 'metadata' | 'checking' | 'downloading' | 'seeding' | 'paused' | 'done' | 'error'
 
 export interface TorrentInfo {
   infoHash: string

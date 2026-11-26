@@ -1,22 +1,21 @@
-import { readFileSync } from 'node:fs'
 import { mkdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { join } from 'node:path'
-import WebTorrent from 'webtorrent'
-import type { Torrent, TorrentFile } from 'webtorrent'
 import parseTorrent from 'parse-torrent'
 import type { DownloadTarget } from '../core/indexer'
 import { magnetToInfoHash } from '../core/release'
 import { externalSubtitles, mainVideo, readMediaTracks, type MediaTracks } from '../core/media-tracks'
 import type { TorrentFileInfo, TorrentInfo } from '../shared/api'
+import { Engine, type EngineTorrent } from './engine'
 import type { JsonStore } from './store'
 
-// Built-in BitTorrent client on top of WebTorrent (pure JS: TCP, uTP, DHT, PEX, trackers).
-// Every torrent is persisted as a record plus its .torrent metadata so downloads resume
-// after a restart; WebTorrent re-verifies pieces already on disk.
+// The download list. Our records (torseek.json) are the source of truth: what the user
+// added, where it goes, paused or not, which files. The engine (rqbit, see engine.ts) does
+// the transfers and keeps its own resume data; on start and after an engine restart the
+// two are reconciled. Every torrent's .torrent is kept in metaDir, so a magnet resolves
+// only once.
 //
-// Partial downloads: the record keeps the indexes of deselected files. WebTorrent never
-// marks a partially selected torrent as done, so completion is tracked here over the
-// selected files only.
+// Folder layout matches every other client (and what the old engine wrote): a multi-file
+// torrent goes into <folder>/<torrent name>/, a single-file one straight into <folder>.
 
 export interface TorrentRecord {
   infoHash: string
@@ -37,27 +36,28 @@ export interface TorrentRecord {
 
 export interface TorrentStoreShape {
   torrents: TorrentRecord[]
+  /** Port for incoming peer connections, picked once */
+  listenPort?: number
 }
 
 export interface TorrentManagerOptions {
+  /** rqbit executable */
+  engineBinary: string
+  /** Engine session data */
+  engineDir: string
+  defaultFolder: () => string
   seedAfterDownload: () => boolean
   /** Called once when every selected file of a torrent has finished */
   onComplete?: (rec: TorrentRecord) => void
+  /** Called after each status poll */
+  onUpdate?: () => void
+  /** Extra engine flags */
+  engineArgs?: string[]
 }
 
 // Added to every torrent, as most clients do: magnets from index sites often list only
 // trackers that died years ago, and then the metadata never arrives
-// DHT entry points. The library's default three barely answer from many networks
-// (1 node, 0 peers in a minute where this list gets ~25 nodes and dozens of peers)
-const DHT_BOOTSTRAP = [
-  'router.bittorrent.com:6881',
-  'router.utorrent.com:6881',
-  'dht.transmissionbt.com:6881',
-  'dht.libtorrent.org:25401',
-  'dht.aelitis.com:6881',
-]
-
-const PUBLIC_TRACKERS = [
+export const PUBLIC_TRACKERS = [
   'udp://tracker.opentrackr.org:1337/announce',
   'udp://open.demonii.com:1337/announce',
   'udp://open.stealth.si:80/announce',
@@ -70,10 +70,22 @@ const PUBLIC_TRACKERS = [
   'http://tracker.opentrackr.org:1337/announce',
 ]
 
+interface Meta {
+  name: string
+  files: { path: string; length: number }[]
+}
+
 export class TorrentManager {
-  private client: WebTorrent.Instance
-  private live = new Map<string, Torrent>()
+  private engine: Engine
+  /** Latest engine view per info hash */
+  private live = new Map<string, EngineTorrent>()
+  /** Parsed .torrent per info hash */
+  private metas = new Map<string, Meta>()
   private errors = new Map<string, string>()
+  /** Magnets waiting for metadata */
+  private resolving = new Map<string, AbortController>()
+  private poller?: ReturnType<typeof setInterval>
+  private syncing?: Promise<void>
 
   constructor(
     private readonly store: JsonStore<TorrentStoreShape>,
@@ -81,36 +93,32 @@ export class TorrentManager {
     private readonly opts: TorrentManagerOptions,
     private readonly log: (msg: string) => void = () => {},
   ) {
-    // Nodes from the last run make the DHT useful right away instead of after minutes
-    let nodes: unknown[] | undefined
-    try {
-      nodes = JSON.parse(readFileSync(this.dhtFile(), 'utf8'))
-    } catch {
-      /* first run */
+    let port = store.get().listenPort
+    if (!port) {
+      port = 20000 + Math.floor(Math.random() * 40000)
+      store.update((d) => (d.listenPort = port))
     }
-    // maxConns: connections per torrent, pending ones included. Big swarms hand out a
-    // thousand+ peer addresses, most of them unreachable; with the default 55 the client
-    // spends its slots waiting out connect timeouts and ends up with ~10 peers. 200 found
-    // more peers and fetched ~75% more in the first minute on a 300-seed torrent.
-    this.client = new WebTorrent({ maxConns: 200, dht: { bootstrap: DHT_BOOTSTRAP, ...(nodes?.length ? { nodes } : {}) } })
-    this.client.on('error', (err) => this.log(`webtorrent: ${String(err)}`))
-    setInterval(() => void this.saveDhtNodes(), 10 * 60_000).unref()
-  }
-
-  private dhtFile() {
-    return join(this.metaDir, 'dht-nodes.json')
-  }
-
-  private async saveDhtNodes() {
-    const nodes = (this.client.dht as { toJSON?: () => { nodes: unknown[] } } | undefined)?.toJSON?.().nodes
-    if (nodes?.length) await writeFile(this.dhtFile(), JSON.stringify(nodes.slice(0, 500))).catch(() => {})
+    this.engine = new Engine({
+      binary: opts.engineBinary,
+      dataDir: opts.engineDir,
+      defaultFolder: opts.defaultFolder(),
+      listenPort: port,
+      trackers: PUBLIC_TRACKERS,
+      extraArgs: opts.engineArgs,
+      log,
+    })
+    this.engine.onRestart = () => void this.sync()
   }
 
   async init() {
     await mkdir(this.metaDir, { recursive: true })
-    // Leftovers of track probes interrupted by a quit
+    // Leftovers of the old engine and of interrupted track probes
     await rm(join(this.metaDir, 'probe'), { recursive: true, force: true }).catch(() => {})
-    for (const rec of this.records()) if (!rec.paused) void this.start(rec)
+    await rm(join(this.metaDir, 'dht-nodes.json'), { force: true }).catch(() => {})
+    for (const rec of this.records()) await this.loadMeta(rec.infoHash)
+    await this.engine.start()
+    await this.sync()
+    this.poller = setInterval(() => void this.poll(), 1000)
   }
 
   private records(): TorrentRecord[] {
@@ -123,13 +131,148 @@ export class TorrentManager {
     return rec
   }
 
+  private find(infoHash: string) {
+    return this.records().find((r) => r.infoHash === infoHash)
+  }
+
   private patch(infoHash: string, patch: Partial<TorrentRecord>) {
-    this.store.update(() => Object.assign(this.record(infoHash), patch))
+    const rec = this.find(infoHash)
+    if (rec) this.store.update(() => Object.assign(rec, patch))
   }
 
   private metaFile(infoHash: string) {
     return join(this.metaDir, `${infoHash}.torrent`)
   }
+
+  private async loadMeta(infoHash: string): Promise<Uint8Array | undefined> {
+    try {
+      const data = await readFile(this.metaFile(infoHash))
+      if (!this.metas.has(infoHash)) this.metas.set(infoHash, await metaOf(data))
+      return data
+    } catch {
+      return undefined
+    }
+  }
+
+  /** Where the engine writes a torrent: <path>/<name>/ for multi-file torrents */
+  private outputFolder(rec: TorrentRecord, meta: Meta) {
+    return meta.files.length > 1 ? join(rec.path, safeName(meta.name)) : rec.path
+  }
+
+  // --- Reconciling records with the engine ---
+
+  /** Make the engine hold exactly our torrents, in the right state */
+  private sync(): Promise<void> {
+    this.syncing ??= this.doSync().finally(() => (this.syncing = undefined))
+    return this.syncing
+  }
+
+  private async doSync() {
+    let engineList: EngineTorrent[]
+    try {
+      engineList = await this.engine.list()
+    } catch (e) {
+      this.log(`engine list: ${(e as Error).message}`)
+      return
+    }
+    const ours = new Set(this.records().map((r) => r.infoHash))
+    for (const t of engineList) {
+      if (!ours.has(t.info_hash)) await this.engine.remove(t.info_hash, false).catch(() => {})
+    }
+    const inEngine = new Map(engineList.map((t) => [t.info_hash, t]))
+    for (const rec of this.records()) {
+      const t = inEngine.get(rec.infoHash)
+      if (!t) {
+        await this.startInEngine(rec)
+        continue
+      }
+      this.live.set(rec.infoHash, t)
+      const state = t.stats?.state
+      if (rec.paused && (state === 'live' || state === 'initializing')) await this.engine.pause(rec.infoHash).catch(() => {})
+      if (!rec.paused && state === 'paused') await this.engine.resume(rec.infoHash).catch(() => {})
+    }
+  }
+
+  /** Adds a record's torrent to the engine; magnets first resolve to a .torrent */
+  private async startInEngine(rec: TorrentRecord) {
+    let data = await this.loadMeta(rec.infoHash)
+    if (!data) {
+      if (!rec.magnet || this.resolving.has(rec.infoHash)) return
+      const ctrl = new AbortController()
+      this.resolving.set(rec.infoHash, ctrl)
+      try {
+        data = await this.engine.resolveMagnet(rec.magnet, ctrl.signal)
+        await writeFile(this.metaFile(rec.infoHash), data)
+        await this.loadMeta(rec.infoHash)
+      } catch (e) {
+        if (!ctrl.signal.aborted) this.errors.set(rec.infoHash, (e as Error).message)
+        return
+      } finally {
+        this.resolving.delete(rec.infoHash)
+      }
+      if (!this.find(rec.infoHash)) return // removed while resolving
+    }
+    const meta = this.metas.get(rec.infoHash)!
+    if (meta.name && meta.name !== rec.name) this.patch(rec.infoHash, { name: meta.name })
+    const onlyFiles = rec.deselected?.length ? meta.files.map((_, i) => i).filter((i) => !rec.deselected!.includes(i)) : undefined
+    try {
+      const t = await this.engine.add(data, { outputFolder: this.outputFolder(rec, meta), onlyFiles })
+      this.live.set(rec.infoHash, t)
+      this.errors.delete(rec.infoHash)
+      if (this.find(rec.infoHash)?.paused) await this.engine.pause(rec.infoHash).catch(() => {})
+    } catch (e) {
+      this.errors.set(rec.infoHash, (e as Error).message)
+      this.log(`add ${rec.infoHash}: ${(e as Error).message}`)
+    }
+  }
+
+  private polling = false
+  private async poll() {
+    if (this.polling) return
+    this.polling = true
+    try {
+      const list = await this.engine.list()
+      const seen = new Set<string>()
+      for (const t of list) {
+        seen.add(t.info_hash)
+        const prev = this.live.get(t.info_hash)
+        // The list has stats but not files; keep the file list from earlier
+        this.live.set(t.info_hash, { ...prev, ...t, files: t.files ?? prev?.files })
+        if (!t.files && !prev?.files) void this.engine.details(t.info_hash).then((d) => this.live.set(t.info_hash, { ...this.live.get(t.info_hash)!, files: d.files }))
+        const err = t.stats?.state === 'error' ? (t.stats.error ?? 'Error') : undefined
+        if (err) this.errors.set(t.info_hash, err)
+        else if (this.errors.has(t.info_hash) && !this.resolving.has(t.info_hash)) this.errors.delete(t.info_hash)
+        this.checkComplete(t.info_hash)
+      }
+      for (const h of [...this.live.keys()]) if (!seen.has(h)) this.live.delete(h)
+      // Records the engine lost (crash, deleted session): add them again
+      if (this.records().some((r) => !seen.has(r.infoHash) && !this.resolving.has(r.infoHash) && !this.errors.has(r.infoHash))) void this.sync()
+      this.opts.onUpdate?.()
+    } catch (e) {
+      this.log(`poll: ${(e as Error).message}`)
+    } finally {
+      this.polling = false
+    }
+  }
+
+  private checkComplete(infoHash: string) {
+    const t = this.live.get(infoHash)
+    const rec = this.find(infoHash)
+    if (!t?.stats || !rec) return
+    const complete = t.stats.finished && t.stats.total_bytes > 0
+    if (complete && !rec.done) {
+      this.patch(infoHash, { done: true, completedAt: Date.now() })
+      this.opts.onComplete?.(rec)
+      if (!this.opts.seedAfterDownload()) void this.pause(infoHash)
+      void this.detectTracksFor(infoHash)
+    } else if (!complete && rec.done && t.stats.state === 'live') {
+      // More files were selected after completion
+      this.patch(infoHash, { done: false })
+    }
+    if (!rec.tracks && t.stats.state === 'live') void this.detectTracksFor(infoHash)
+  }
+
+  // --- Public API ---
 
   /** title names the torrent until its metadata arrives (magnets often have an empty dn) */
   async add(target: DownloadTarget, path: string, source?: TorrentRecord['source'], title?: string): Promise<{ infoHash: string }> {
@@ -137,10 +280,12 @@ export class TorrentManager {
     let name: string
     let magnet: string | undefined
     if (target.kind === 'torrent') {
-      const parsed = await parseTorrent(Buffer.from(target.data))
-      infoHash = parsed.infoHash!
-      name = parsed.name?.toString() ?? infoHash
+      const meta = await metaOf(target.data)
+      infoHash = (await parseTorrent(Buffer.from(target.data))).infoHash!
+      name = meta.name || title || infoHash
+      await mkdir(this.metaDir, { recursive: true })
       await writeFile(this.metaFile(infoHash), target.data)
+      this.metas.set(infoHash, meta)
     } else {
       magnet = target.uri
       infoHash = magnetToInfoHash(target.uri) ?? ''
@@ -148,14 +293,14 @@ export class TorrentManager {
       name = new URLSearchParams(target.uri.split('?')[1]).get('dn') || title || infoHash
     }
 
-    const existing = this.records().find((r) => r.infoHash === infoHash)
+    const existing = this.find(infoHash)
     if (existing) {
       if (existing.paused) await this.resume(infoHash)
       return { infoHash }
     }
     const rec: TorrentRecord = { infoHash, name, magnet, path, addedAt: Date.now(), paused: false, done: false, source }
     this.store.update((d) => d.torrents.unshift(rec))
-    await this.start(rec)
+    void this.startInEngine(rec).then(() => this.opts.onUpdate?.())
     return { infoHash }
   }
 
@@ -163,257 +308,16 @@ export class TorrentManager {
     return this.add({ kind: 'magnet', uri }, path)
   }
 
-  private async start(rec: TorrentRecord) {
-    if (this.live.has(rec.infoHash)) return
-    this.errors.delete(rec.infoHash)
-    let torrentId: string | Buffer = rec.magnet ?? rec.infoHash
-    try {
-      torrentId = await readFile(this.metaFile(rec.infoHash))
-    } catch {
-      /* no metadata yet, fall back to the magnet */
-    }
-
-    const partial = (rec.deselected?.length ?? 0) > 0
-    const torrent = this.client.add(torrentId, { path: rec.path, deselect: partial, announce: PUBLIC_TRACKERS })
-    this.live.set(rec.infoHash, torrent)
-
-    torrent.on('metadata', async () => {
-      if (torrent.name && torrent.name !== rec.name) this.patch(rec.infoHash, { name: torrent.name })
-      if (torrent.torrentFile) await writeFile(this.metaFile(rec.infoHash), torrent.torrentFile).catch(() => {})
-    })
-    torrent.on('ready', () => {
-      if (partial) this.applySelection(torrent, this.record(rec.infoHash).deselected ?? [])
-      // Deferred: WebTorrent emits 'done' from inside its own loop and keeps using the torrent
-      // right after; pausing (destroying) it synchronously there crashed the main process
-      torrent.files.forEach((f) => f.on('done', () => setImmediate(() => this.checkComplete(rec.infoHash))))
-      setImmediate(() => this.checkComplete(rec.infoHash))
-      if (!this.record(rec.infoHash).tracks) void this.detectTracks(torrent).then((tracks) => tracks && this.patch(rec.infoHash, { tracks }))
-    })
-    torrent.on('error', (err) => {
-      this.errors.set(rec.infoHash, String((err as Error)?.message ?? err))
-      this.live.delete(rec.infoHash)
-    })
-  }
-
-  // Deselect everything, then select wanted files: pieces shared by a wanted and an
-  // unwanted file at a boundary stay selected.
-  private applySelection(torrent: Torrent, deselected: number[]) {
-    if (!torrent.pieces?.length) return
-    torrent.deselect(0, torrent.pieces.length - 1)
-    torrent.files.forEach((f, i) => {
-      if (!deselected.includes(i)) f.select()
-    })
-  }
-
-  private selectedFiles(torrent: Torrent, rec: TorrentRecord): TorrentFile[] {
-    return torrent.files.filter((_, i) => !rec.deselected?.includes(i))
-  }
-
-  private checkComplete(infoHash: string) {
-    const t = this.live.get(infoHash)
-    const rec = this.records().find((r) => r.infoHash === infoHash)
-    if (!t || !rec || !t.ready) return
-    const selected = this.selectedFiles(t, rec)
-    const complete = selected.length > 0 && selected.every((f) => f.done)
-    if (complete && !rec.done) {
-      this.patch(infoHash, { done: true, completedAt: Date.now() })
-      this.opts.onComplete?.(rec)
-      if (!this.opts.seedAfterDownload()) void this.pause(infoHash)
-    } else if (!complete && rec.done) {
-      // More files were selected after completion
-      this.patch(infoHash, { done: false })
-    }
-  }
-
-  // --- Tracks: what audio / subtitles the release really has ---
-
-  private probes = new Map<string, Promise<MediaTracks>>()
-
-  /** Tracks of a ready torrent's main video, plus subtitle files next to it */
-  private async detectTracks(torrent: Torrent): Promise<MediaTracks | undefined> {
-    const main = mainVideo(torrent.files)
-    const external = externalSubtitles(torrent.files.map((f) => f.path))
-    if (!main) return external.length ? { file: '', container: 'other', tracks: external } : undefined
-    const read = async (start: number, end: number) => {
-      const chunks: Uint8Array[] = []
-      for await (const c of main.createReadStream({ start, end })) chunks.push(c)
-      return Buffer.concat(chunks)
-    }
-    try {
-      const found = await readMediaTracks(main.path, main.length, read)
-      return { ...found, tracks: [...found.tracks, ...external] }
-    } catch (e) {
-      this.log(`tracks ${torrent.infoHash}: ${(e as Error).message}`)
-      return undefined
-    }
-  }
-
-  /**
-   * Tracks of a release without downloading it: join the swarm for the metadata and the
-   * first piece(s) of the video, read the header, leave. Torrents already in the list are
-   * read in place.
-   */
-  async infoHashOf(target: DownloadTarget): Promise<string> {
-    const hash = target.kind === 'torrent' ? (await parseTorrent(Buffer.from(target.data))).infoHash : magnetToInfoHash(target.uri)
-    if (!hash || !/^[0-9a-f]{40}$/.test(hash)) throw new Error('Unsupported magnet link')
-    return hash
-  }
-
-  probe(target: DownloadTarget, infoHash: string): Promise<MediaTracks> {
-    const cached = this.probes.get(infoHash)
-    if (cached) return cached
-    const rec = this.records().find((r) => r.infoHash === infoHash)
-    if (rec?.tracks) return Promise.resolve(rec.tracks)
-    const live = this.live.get(infoHash)
-    const run = async (): Promise<MediaTracks> => {
-      if (live) {
-        if (!live.ready) await new Promise((resolve) => live.once('ready', resolve))
-        const t = await this.detectTracks(live)
-        if (!t) throw new Error('No video in this torrent')
-        return t
-      }
-      const dir = join(this.metaDir, 'probe', infoHash)
-      const id = target.kind === 'torrent' ? target.data : target.uri
-      const torrent = this.client.add(id, { path: dir, deselect: true, announce: PUBLIC_TRACKERS })
-      try {
-        await new Promise<void>((resolve, reject) => {
-          const timer = setTimeout(() => reject(new Error('No peers sent the torrent in time')), 90_000)
-          torrent.once('ready', () => (clearTimeout(timer), resolve()))
-          torrent.once('error', (e) => (clearTimeout(timer), reject(e)))
-        })
-        const t = await Promise.race([
-          this.detectTracks(torrent),
-          new Promise<never>((_, reject) => setTimeout(() => reject(new Error('No peers sent the video header in time')), 120_000)),
-        ])
-        if (!t) throw new Error('No video in this torrent')
-        return t
-      } finally {
-        await new Promise<void>((resolve) => torrent.destroy({ destroyStore: true }, () => resolve()))
-        await rm(dir, { recursive: true, force: true }).catch(() => {})
-      }
-    }
-    const p = run()
-    this.probes.set(infoHash, p)
-    p.catch(() => this.probes.delete(infoHash))
-    return p
-  }
-
-  /** Choose which files to download (indexes into the torrent's file list). */
-  async setFileSelection(infoHash: string, selected: number[]) {
-    const t = this.live.get(infoHash)
-    const count = t?.files.length ?? 0
-    const deselected = Array.from({ length: count }, (_, i) => i).filter((i) => !selected.includes(i))
-    this.patch(infoHash, { deselected })
-    if (t?.ready) {
-      this.applySelection(t, deselected)
-      this.checkComplete(infoHash)
-    }
-  }
-
   async pause(infoHash: string) {
     this.patch(infoHash, { paused: true })
-    const t = this.live.get(infoHash)
-    this.live.delete(infoHash)
-    if (t) await new Promise<void>((resolve) => t.destroy({ destroyStore: false }, () => resolve()))
+    if (this.live.has(infoHash)) await this.engine.pause(infoHash).catch((e) => this.log(`pause: ${e.message}`))
   }
 
   async resume(infoHash: string) {
     this.patch(infoHash, { paused: false })
-    await this.start(this.record(infoHash))
-  }
-
-  async remove(infoHash: string, deleteFiles: boolean) {
-    const rec = this.record(infoHash)
-    const t = this.live.get(infoHash)
-    this.live.delete(infoHash)
-    if (t) await new Promise<void>((resolve) => t.destroy({ destroyStore: deleteFiles }, () => resolve()))
-    else if (deleteFiles) await rm(join(rec.path, rec.name), { recursive: true, force: true })
-    await rm(this.metaFile(infoHash), { force: true })
-    this.store.update((d) => {
-      d.torrents = d.torrents.filter((r) => r.infoHash !== infoHash)
-    })
-  }
-
-  contentPath(infoHash: string): string {
-    const rec = this.record(infoHash)
-    const t = this.live.get(infoHash)
-    return join(rec.path, t?.name ?? rec.name)
-  }
-
-  filePath(infoHash: string, index: number): string {
-    const t = this.live.get(infoHash)
-    const file = t?.files[index]
-    if (!file) throw new Error('File not available (torrent paused or metadata missing)')
-    return join(this.record(infoHash).path, file.path)
-  }
-
-  files(infoHash: string): TorrentFileInfo[] {
-    const t = this.live.get(infoHash)
-    const rec = this.records().find((r) => r.infoHash === infoHash)
-    if (!t?.ready || !rec) return []
-    return t.files.map((f, index) => ({
-      index,
-      name: f.name,
-      path: f.path,
-      length: f.length,
-      downloaded: f.downloaded,
-      progress: f.progress,
-      selected: !rec.deselected?.includes(index),
-    }))
-  }
-
-  setLimits(downloadKBs: number, uploadKBs: number) {
-    this.client.throttleDownload(downloadKBs > 0 ? downloadKBs * 1024 : -1)
-    this.client.throttleUpload(uploadKBs > 0 ? uploadKBs * 1024 : -1)
-  }
-
-  snapshot(): TorrentInfo[] {
-    return this.records().map((rec) => {
-      const t = this.live.get(rec.infoHash)
-      const error = this.errors.get(rec.infoHash)
-      const base = {
-        infoHash: rec.infoHash,
-        name: t?.name ?? rec.name,
-        path: rec.path,
-        addedAt: rec.addedAt,
-        source: rec.source,
-        error,
-        partial: (rec.deselected?.length ?? 0) > 0,
-        tracks: rec.tracks,
-      }
-      if (!t) {
-        return {
-          ...base,
-          state: error ? 'error' : rec.done ? 'done' : 'paused',
-          progress: rec.done ? 1 : 0,
-          length: 0,
-          downloaded: 0,
-          uploaded: 0,
-          downloadSpeed: 0,
-          uploadSpeed: 0,
-          numPeers: 0,
-          timeRemaining: 0,
-        }
-      }
-      // Progress and size over the selected files only
-      const selected = t.ready ? this.selectedFiles(t, rec) : []
-      const length = selected.reduce((s, f) => s + f.length, 0)
-      const downloaded = selected.reduce((s, f) => s + f.downloaded, 0)
-      const progress = length ? Math.min(1, downloaded / length) : t.progress
-      const remaining = Math.max(0, length - downloaded)
-      return {
-        ...base,
-        state: !t.ready ? 'metadata' : rec.done ? 'seeding' : 'downloading',
-        progress,
-        length,
-        downloaded,
-        uploaded: t.uploaded,
-        downloadSpeed: t.downloadSpeed,
-        uploadSpeed: t.uploadSpeed,
-        numPeers: t.numPeers,
-        timeRemaining: rec.done || !t.downloadSpeed ? 0 : (remaining / t.downloadSpeed) * 1000,
-      }
-    })
+    this.errors.delete(infoHash)
+    if (this.live.has(infoHash)) await this.engine.resume(infoHash)
+    else await this.startInEngine(this.record(infoHash))
   }
 
   async pauseAll() {
@@ -424,13 +328,240 @@ export class TorrentManager {
     for (const r of this.records()) if (r.paused) await this.resume(r.infoHash)
   }
 
+  async remove(infoHash: string, deleteFiles: boolean) {
+    const rec = this.record(infoHash)
+    this.resolving.get(infoHash)?.abort()
+    const meta = this.metas.get(infoHash)
+    this.store.update((d) => {
+      d.torrents = d.torrents.filter((r) => r.infoHash !== infoHash)
+    })
+    if (this.live.has(infoHash)) await this.engine.remove(infoHash, deleteFiles).catch((e) => this.log(`remove: ${e.message}`))
+    else if (deleteFiles && meta) {
+      if (meta.files.length > 1) await rm(this.outputFolder(rec, meta), { recursive: true, force: true })
+      else await rm(join(rec.path, meta.files[0].path), { force: true })
+    }
+    // rqbit deletes the files but leaves the torrent's folder
+    if (deleteFiles && meta && meta.files.length > 1) await rm(this.outputFolder(rec, meta), { recursive: true, force: true }).catch(() => {})
+    this.live.delete(infoHash)
+    this.metas.delete(infoHash)
+    this.errors.delete(infoHash)
+    await rm(this.metaFile(infoHash), { force: true })
+  }
+
+  /** Choose which files to download (indexes into the torrent's file list). */
+  async setFileSelection(infoHash: string, selected: number[]) {
+    const meta = this.metas.get(infoHash)
+    if (!meta) return
+    if (!selected.length) throw new Error('Select at least one file')
+    const deselected = meta.files.map((_, i) => i).filter((i) => !selected.includes(i))
+    this.patch(infoHash, { deselected })
+    if (this.live.has(infoHash)) await this.engine.setOnlyFiles(infoHash, selected)
+  }
+
+  contentPath(infoHash: string): string {
+    const rec = this.record(infoHash)
+    const meta = this.metas.get(infoHash)
+    if (!meta) return rec.path
+    return meta.files.length > 1 ? this.outputFolder(rec, meta) : join(rec.path, meta.files[0].path)
+  }
+
+  filePath(infoHash: string, index: number): string {
+    const rec = this.record(infoHash)
+    const meta = this.metas.get(infoHash)
+    const file = meta?.files[index]
+    if (!meta || !file) throw new Error('File not available (torrent paused or metadata missing)')
+    return join(meta.files.length > 1 ? this.outputFolder(rec, meta) : rec.path, file.path)
+  }
+
+  files(infoHash: string): TorrentFileInfo[] {
+    const rec = this.find(infoHash)
+    const meta = this.metas.get(infoHash)
+    if (!rec || !meta) return []
+    const progress = this.live.get(infoHash)?.stats?.file_progress
+    return meta.files.map((f, index) => {
+      const selected = !rec.deselected?.includes(index)
+      const downloaded = progress?.[index] ?? (rec.done && selected ? f.length : 0)
+      return {
+        index,
+        name: f.path.split('/').pop()!,
+        path: meta.files.length > 1 ? `${meta.name}/${f.path}` : f.path,
+        length: f.length,
+        downloaded,
+        progress: f.length ? Math.min(1, downloaded / f.length) : 1,
+        selected,
+      }
+    })
+  }
+
+  setLimits(downloadKBs: number, uploadKBs: number) {
+    void this.engine.setLimits(downloadKBs * 1024, uploadKBs * 1024).catch((e) => this.log(`limits: ${e.message}`))
+  }
+
+  snapshot(): TorrentInfo[] {
+    return this.records().map((rec) => {
+      const t = this.live.get(rec.infoHash)
+      const s = t?.stats
+      const error = this.errors.get(rec.infoHash) ?? (s?.state === 'error' ? (s.error ?? 'Error') : undefined)
+      const base = {
+        infoHash: rec.infoHash,
+        name: this.metas.get(rec.infoHash)?.name || rec.name,
+        path: rec.path,
+        addedAt: rec.addedAt,
+        source: rec.source,
+        error,
+        partial: (rec.deselected?.length ?? 0) > 0,
+        tracks: rec.tracks,
+      }
+      // Size and progress over the selected files (the engine counts whole pieces)
+      const meta = this.metas.get(rec.infoHash)
+      const picked = meta?.files.map((f, i) => ({ ...f, i })).filter((f) => !rec.deselected?.includes(f.i))
+      const length = picked && s ? picked.reduce((n, f) => n + f.length, 0) : (s?.total_bytes ?? 0)
+      const downloaded = picked && s?.file_progress?.length ? picked.reduce((n, f) => n + Math.min(f.length, s.file_progress[f.i] ?? 0), 0) : (s?.progress_bytes ?? 0)
+      const live = s?.live
+      const downloadSpeed = (live?.download_speed?.mbps ?? 0) * 1024 * 1024
+      const state: TorrentInfo['state'] = error
+        ? 'error'
+        : !s
+          ? rec.paused
+            ? 'paused'
+            : 'metadata'
+          : rec.paused || s.state === 'paused'
+            ? rec.done
+              ? 'done'
+              : 'paused'
+            : s.state === 'initializing'
+              ? 'checking'
+              : rec.done
+                ? 'seeding'
+                : 'downloading'
+      return {
+        ...base,
+        state,
+        progress: length ? Math.min(1, downloaded / length) : rec.done ? 1 : 0,
+        length,
+        downloaded,
+        uploaded: s?.uploaded_bytes ?? 0,
+        downloadSpeed: state === 'downloading' || state === 'seeding' ? downloadSpeed : 0,
+        uploadSpeed: state === 'downloading' || state === 'seeding' ? (live?.upload_speed?.mbps ?? 0) * 1024 * 1024 : 0,
+        numPeers: state === 'downloading' || state === 'seeding' ? (live?.snapshot?.peer_stats?.live ?? 0) : 0,
+        timeRemaining: state === 'downloading' && live?.time_remaining?.duration ? live.time_remaining.duration.secs * 1000 : 0,
+      }
+    })
+  }
+
   /** Active (not paused, not finished) transfers, for the tray tooltip. */
   activeCount(): number {
     return this.records().filter((r) => !r.paused && !r.done).length
   }
 
   async destroy() {
-    await this.saveDhtNodes()
-    await new Promise<void>((resolve) => this.client.destroy(() => resolve()))
+    clearInterval(this.poller)
+    for (const c of this.resolving.values()) c.abort()
+    await this.engine.stop()
   }
+
+  // --- Tracks: what audio / subtitles the release really has ---
+
+  private probes = new Map<string, Promise<MediaTracks>>()
+  private detecting = new Set<string>()
+
+  private async detectTracksFor(infoHash: string) {
+    if (this.detecting.has(infoHash) || this.find(infoHash)?.tracks) return
+    this.detecting.add(infoHash)
+    try {
+      const tracks = await this.readTracks(infoHash)
+      if (tracks) this.patch(infoHash, { tracks })
+    } catch (e) {
+      this.log(`tracks ${infoHash}: ${(e as Error).message}`)
+    } finally {
+      this.detecting.delete(infoHash)
+    }
+  }
+
+  /** Tracks of a torrent in the engine: the main video's header plus subtitle files next to it */
+  private async readTracks(infoHash: string, signal?: AbortSignal): Promise<MediaTracks | undefined> {
+    const meta = this.metas.get(infoHash)
+    if (!meta) return undefined
+    const files = meta.files.map((f, index) => ({ ...f, index }))
+    const main = mainVideo(files)
+    const external = externalSubtitles(files.map((f) => f.path))
+    if (!main) return external.length ? { file: '', container: 'other', tracks: external } : undefined
+    const found = await readMediaTracks(main.path, main.length, (start, end) => this.engine.readRange(infoHash, main.index, start, end, signal))
+    return { ...found, tracks: [...found.tracks, ...external] }
+  }
+
+  async infoHashOf(target: DownloadTarget): Promise<string> {
+    const hash = target.kind === 'torrent' ? (await parseTorrent(Buffer.from(target.data))).infoHash : magnetToInfoHash(target.uri)
+    if (!hash || !/^[0-9a-f]{40}$/.test(hash)) throw new Error('Unsupported magnet link')
+    return hash
+  }
+
+  /**
+   * Tracks of a release without downloading it: get the metadata, fetch only the start
+   * (and, for MP4, the end) of the main video, read its header, drop it. Torrents already
+   * in the list are read in place.
+   */
+  probe(target: DownloadTarget, infoHash: string): Promise<MediaTracks> {
+    const cached = this.probes.get(infoHash)
+    if (cached) return cached
+    const rec = this.find(infoHash)
+    if (rec?.tracks) return Promise.resolve(rec.tracks)
+    const run = async (): Promise<MediaTracks> => {
+      const signal = AbortSignal.timeout(180_000)
+      if (rec && this.live.has(infoHash)) {
+        const t = await this.readTracks(infoHash, signal)
+        if (!t) throw new Error('No video in this torrent')
+        return t
+      }
+      const data =
+        target.kind === 'torrent'
+          ? target.data
+          : await this.engine.resolveMagnet(target.uri, AbortSignal.timeout(90_000)).catch(() => {
+              throw new Error('No peers sent the torrent in time')
+            })
+      const meta = await metaOf(data)
+      this.metas.set(infoHash, meta)
+      const files = meta.files.map((f, index) => ({ ...f, index }))
+      const main = mainVideo(files)
+      const external = externalSubtitles(files.map((f) => f.path))
+      if (!main) {
+        if (external.length) return { file: '', container: 'other', tracks: external }
+        throw new Error('No video in this torrent')
+      }
+      const dir = join(this.metaDir, 'probe', infoHash)
+      await this.engine.add(data, { outputFolder: dir, onlyFiles: [main.index] })
+      try {
+        const found = await readMediaTracks(main.path, main.length, (start, end) => this.engine.readRange(infoHash, main.index, start, end, signal)).catch(() => {
+          throw new Error('No peers sent the video header in time')
+        })
+        return { ...found, tracks: [...found.tracks, ...external] }
+      } finally {
+        await this.engine.remove(infoHash, true).catch(() => {})
+        if (!this.find(infoHash)) this.metas.delete(infoHash)
+        await rm(dir, { recursive: true, force: true }).catch(() => {})
+      }
+    }
+    const p = run()
+    this.probes.set(infoHash, p)
+    p.catch(() => this.probes.delete(infoHash))
+    return p
+  }
+}
+
+/** Name and files of a .torrent; paths use "/" and exclude the torrent's name */
+async function metaOf(data: Uint8Array): Promise<Meta> {
+  const parsed = (await parseTorrent(Buffer.from(data))) as unknown as { name?: string | Uint8Array; files?: { path: string; length: number }[] }
+  const name = String(parsed.name ?? '')
+  const files = (parsed.files ?? []).map((f) => {
+    const parts = f.path.split(/[\\/]/)
+    // parse-torrent prefixes multi-file paths with the torrent name
+    if (parts.length > 1 && parts[0] === name) parts.shift()
+    return { path: parts.join('/'), length: f.length }
+  })
+  return { name, files }
+}
+
+/** Torrent names as folder names (the engine is given the folder, so it can't clean it up) */
+function safeName(name: string) {
+  return name.replace(/[<>:"/\\|?*\u0000-\u001f]/g, '_').replace(/[. ]+$/, '') || 'torrent'
 }

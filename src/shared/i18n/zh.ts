@@ -76,6 +76,7 @@ export const zh: Dict = {
   "dl.noneTitle": "这里什么都没有",
   "dl.noneText": "没有符合此筛选的种子。",
   "dl.state.metadata": "正在获取元数据",
+  "dl.state.checking": "正在校验文件",
   "dl.state.downloading": "下载中",
   "dl.state.seeding": "做种中",
   "dl.state.paused": "已暂停",

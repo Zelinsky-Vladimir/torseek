@@ -76,6 +76,7 @@ export const ko: Dict = {
   "dl.noneTitle": "아무것도 없습니다",
   "dl.noneText": "이 필터에 맞는 토렌트가 없습니다.",
   "dl.state.metadata": "메타데이터 가져오는 중",
+  "dl.state.checking": "파일 확인 중",
   "dl.state.downloading": "다운로드 중",
   "dl.state.seeding": "시딩 중",
   "dl.state.paused": "일시 중지됨",

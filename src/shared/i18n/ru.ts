@@ -77,6 +77,7 @@ export const ru: Dict = {
   'dl.noneTitle': 'Здесь пусто',
   'dl.noneText': 'Нет торрентов под этот фильтр.',
   'dl.state.metadata': 'Получаем метаданные',
+  "dl.state.checking": "Проверка файлов",
   'dl.state.downloading': 'Загружается',
   'dl.state.seeding': 'Раздаётся',
   'dl.state.paused': 'На паузе',

@@ -11,6 +11,7 @@ import { RealTrackBadges } from '../components/TrackBadges'
 
 const STATE_LABEL: Record<TorrentState, Key> = {
   metadata: 'dl.state.metadata',
+  checking: 'dl.state.checking',
   downloading: 'dl.state.downloading',
   seeding: 'dl.state.seeding',
   paused: 'dl.state.paused',
@@ -29,7 +30,7 @@ export function DownloadsPage() {
   const totalDown = torrents.reduce((s, t) => s + t.downloadSpeed, 0)
   const totalUp = torrents.reduce((s, t) => s + t.uploadSpeed, 0)
   const shown = torrents.filter((t) =>
-    filter === 'all' ? true : filter === 'active' ? ['downloading', 'metadata'].includes(t.state) : ['seeding', 'done'].includes(t.state),
+    filter === 'all' ? true : filter === 'active' ? ['downloading', 'metadata', 'checking'].includes(t.state) : ['seeding', 'done'].includes(t.state),
   )
 
   const addMagnet = async () => {
@@ -97,7 +98,7 @@ export function DownloadsPage() {
 
 function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
   const toast = useStore((s) => s.toast)
-  const active = ['downloading', 'metadata', 'seeding'].includes(t.state)
+  const active = ['downloading', 'metadata', 'checking', 'seeding'].includes(t.state)
   const run = (p: Promise<unknown>) => p.catch((e) => toast({ kind: 'error', text: errorText(e) }))
   const tone = t.state === 'error' ? 'bad' : t.state === 'seeding' || t.state === 'done' ? 'good' : t.state === 'paused' ? 'muted' : 'accent'
   const [open, setOpen] = useState(false)

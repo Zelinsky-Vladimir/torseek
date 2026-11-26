@@ -64,6 +64,7 @@ jobs:
           node-version: 24
           cache: npm
       - run: npm ci
+      - run: npm run engine
       - run: npm version ${{ needs.version.outputs.version }} --no-git-tag-version --allow-same-version
       - run: npm test
       - run: npm run dist -- --publish never

@@ -604,10 +604,17 @@ app.whenReady().then(async () => {
   indexers = new IndexerManager(definitionDirs(), http, store, (o) => openSiteWindow({ ...o, parent: mainWindow }), log, secrets, windowText)
   await indexers.load()
 
+  // rqbit ships as resources/bin; in development it comes from build/bin/<platform> (npm run engine)
+  const engineBinary = app.isPackaged
+    ? join(process.resourcesPath, 'bin', process.platform === 'win32' ? 'rqbit.exe' : 'rqbit')
+    : join(app.getAppPath(), 'build', 'bin', process.platform, process.platform === 'win32' ? 'rqbit.exe' : 'rqbit')
   torrents = new TorrentManager(
     store,
     join(app.getPath('userData'), 'torrents'),
     {
+      engineBinary,
+      engineDir: join(app.getPath('userData'), 'engine'),
+      defaultFolder: () => settings().downloadDir,
       seedAfterDownload: () => settings().seedAfterDownload,
       onComplete: (rec) => {
         notifyComplete(rec.name)
@@ -616,8 +623,8 @@ app.whenReady().then(async () => {
     },
     log,
   )
-  torrents.setLimits(settings().downloadLimit, settings().uploadLimit)
   await torrents.init()
+  torrents.setLimits(settings().downloadLimit, settings().uploadLimit)
 
   definitions = new DefinitionsUpdater(bundledDefinitions(), userDefinitions())
   defStatus.checkedAt = await definitions.lastChecked()

@@ -80,6 +80,7 @@ export const en = {
   'dl.noneTitle': 'Nothing here',
   'dl.noneText': 'No torrents match this filter.',
   'dl.state.metadata': 'Fetching metadata',
+  "dl.state.checking": "Checking files",
   'dl.state.downloading': 'Downloading',
   'dl.state.seeding': 'Seeding',
   'dl.state.paused': 'Paused',

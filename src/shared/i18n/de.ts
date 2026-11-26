@@ -76,6 +76,7 @@ export const de: Dict = {
   "dl.noneTitle": "Hier ist nichts",
   "dl.noneText": "Keine Torrents passen zu diesem Filter.",
   "dl.state.metadata": "Metadaten werden geladen",
+  "dl.state.checking": "Dateien werden geprüft",
   "dl.state.downloading": "Lädt herunter",
   "dl.state.seeding": "Seedet",
   "dl.state.paused": "Pausiert",

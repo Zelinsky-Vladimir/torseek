@@ -28,6 +28,10 @@ const page = await app.firstWindow()
 page.on('pageerror', (e) => console.log('[renderer:exception]', e.message))
 await page.waitForSelector('nav button')
 
+// Skip first-run questions
+await page.evaluate(() => window.api.updateSettings({ searchLanguages: ['en'], askWhereToSave: false }))
+await page.reload()
+await page.waitForSelector('nav button')
 const { infoHash } = await page.evaluate((m) => window.api.addMagnet(m), BBB)
 let files = []
 for (let i = 0; i < 60 && !files.length; i++) {

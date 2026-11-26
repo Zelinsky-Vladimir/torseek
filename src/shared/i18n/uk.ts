@@ -76,6 +76,7 @@ export const uk: Dict = {
   "dl.noneTitle": "Тут порожньо",
   "dl.noneText": "Немає торентів під цей фільтр.",
   "dl.state.metadata": "Отримуємо метадані",
+  "dl.state.checking": "Перевірка файлів",
   "dl.state.downloading": "Завантажується",
   "dl.state.seeding": "Роздається",
   "dl.state.paused": "На паузі",

@@ -76,6 +76,7 @@ export const fr: Dict = {
   "dl.noneTitle": "Rien ici",
   "dl.noneText": "Aucun torrent ne correspond à ce filtre.",
   "dl.state.metadata": "Récupération des métadonnées",
+  "dl.state.checking": "Vérification des fichiers",
   "dl.state.downloading": "Téléchargement",
   "dl.state.seeding": "En partage",
   "dl.state.paused": "En pause",

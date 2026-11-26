@@ -76,6 +76,7 @@ export const tr: Dict = {
   "dl.noneTitle": "Burada bir şey yok",
   "dl.noneText": "Bu filtreye uyan torrent yok.",
   "dl.state.metadata": "Meta veriler alınıyor",
+  "dl.state.checking": "Dosyalar denetleniyor",
   "dl.state.downloading": "İndiriliyor",
   "dl.state.seeding": "Paylaşılıyor",
   "dl.state.paused": "Duraklatıldı",

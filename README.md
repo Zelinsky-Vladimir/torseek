@@ -12,7 +12,8 @@ runs Jackett's community-maintained YAML tracker definitions unchanged.
 
 - **Electron 44** + electron-vite, **React 19**, Tailwind 4, zustand
 - **Core engine** (`src/core`): pure Node, no Electron imports. Testable and usable from the CLI
-- **Torrent client**: WebTorrent 3 (pure JS: TCP/uTP, DHT, PEX, trackers)
+- **Torrent engine**: [rqbit](https://github.com/ikatson/rqbit) (Rust, Apache-2.0) as a child process with a local HTTP API;
+  `npm run engine` downloads it into build/bin (checksum-pinned), installers ship it as resources/bin
 
 ## Layout
 

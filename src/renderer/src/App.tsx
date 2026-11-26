@@ -33,7 +33,7 @@ export function App() {
 
 function Sidebar() {
   const { page, setPage, torrents, indexers, update } = useStore()
-  const active = torrents.filter((t) => t.state === 'downloading' || t.state === 'metadata').length
+  const active = torrents.filter((t) => t.state === 'downloading' || t.state === 'metadata' || t.state === 'checking').length
   const down = torrents.reduce((s, t) => s + t.downloadSpeed, 0)
   const up = torrents.reduce((s, t) => s + t.uploadSpeed, 0)
   const enabled = indexers.filter((i) => i.enabled).length

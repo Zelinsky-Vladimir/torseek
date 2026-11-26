@@ -76,6 +76,7 @@ export const pl: Dict = {
   "dl.noneTitle": "Pusto",
   "dl.noneText": "Żaden torrent nie pasuje do tego filtra.",
   "dl.state.metadata": "Pobieranie metadanych",
+  "dl.state.checking": "Sprawdzanie plików",
   "dl.state.downloading": "Pobieranie",
   "dl.state.seeding": "Seedowanie",
   "dl.state.paused": "Wstrzymano",

@@ -3,3 +3,4 @@ out/
 dist/
 screenshots/
 *.log
+build/bin/

@@ -76,6 +76,7 @@ export const ja: Dict = {
   "dl.noneTitle": "何もありません",
   "dl.noneText": "このフィルターに一致する torrent はありません。",
   "dl.state.metadata": "メタデータを取得中",
+  "dl.state.checking": "ファイルを確認中",
   "dl.state.downloading": "ダウンロード中",
   "dl.state.seeding": "シード中",
   "dl.state.paused": "一時停止",
