@@ -121,6 +121,9 @@ export class Engine {
       // uTP reaches peers TCP can't (behind NAT, uTP-only clients): on a 70-seed torrent
       // behind carrier NAT, 12 live peers instead of 8
       '--experimental-enable-utp-listen',
+      // The default cap of 128 peers per torrent fills up on a busy swarm; with 300, ~150
+      // live peers and 4-5% more throughput (Debian DVD, 3 alternating 45 s runs each)
+      '--peer-limit', '300',
       // The DHT state file is shared by every rqbit on the machine and pins a UDP port; a
       // second rqbit (another app, a test) then can't start. The table rebuilds in seconds.
       '--disable-dht-persistence',
