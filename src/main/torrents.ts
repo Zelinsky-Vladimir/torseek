@@ -73,6 +73,8 @@ export const PUBLIC_TRACKERS = [
 interface Meta {
   name: string
   files: { path: string; length: number }[]
+  /** Multi-file mode: files live in a folder named after the torrent, even if there is only one */
+  multi: boolean
 }
 
 export class TorrentManager {
@@ -156,7 +158,13 @@ export class TorrentManager {
 
   /** Where the engine writes a torrent: <path>/<name>/ for multi-file torrents */
   private outputFolder(rec: TorrentRecord, meta: Meta) {
-    return meta.files.length > 1 ? join(rec.path, safeName(meta.name)) : rec.path
+    return meta.multi ? join(rec.path, safeName(meta.name)) : rec.path
+  }
+
+  /** The engine holds the torrent with another folder than ours (e.g. added by 0.2.13) */
+  private misplaced(rec: TorrentRecord, t: EngineTorrent) {
+    const meta = this.metas.get(rec.infoHash)
+    return !!meta && samePath(t.output_folder, this.outputFolder(rec, meta)) === false
   }
 
   // --- Reconciling records with the engine ---
@@ -183,6 +191,12 @@ export class TorrentManager {
     for (const rec of this.records()) {
       const t = inEngine.get(rec.infoHash)
       if (!t) {
+        await this.startInEngine(rec)
+        continue
+      }
+      if (this.misplaced(rec, t)) {
+        this.log(`${rec.infoHash}: engine folder ${t.output_folder}, re-adding`)
+        await this.engine.remove(rec.infoHash, false).catch(() => {})
         await this.startInEngine(rec)
         continue
       }
@@ -337,11 +351,11 @@ export class TorrentManager {
     })
     if (this.live.has(infoHash)) await this.engine.remove(infoHash, deleteFiles).catch((e) => this.log(`remove: ${e.message}`))
     else if (deleteFiles && meta) {
-      if (meta.files.length > 1) await rm(this.outputFolder(rec, meta), { recursive: true, force: true })
+      if (meta.multi) await rm(this.outputFolder(rec, meta), { recursive: true, force: true })
       else await rm(join(rec.path, meta.files[0].path), { force: true })
     }
     // rqbit deletes the files but leaves the torrent's folder
-    if (deleteFiles && meta && meta.files.length > 1) await rm(this.outputFolder(rec, meta), { recursive: true, force: true }).catch(() => {})
+    if (deleteFiles && meta && meta.multi) await rm(this.outputFolder(rec, meta), { recursive: true, force: true }).catch(() => {})
     this.live.delete(infoHash)
     this.metas.delete(infoHash)
     this.errors.delete(infoHash)
@@ -362,7 +376,7 @@ export class TorrentManager {
     const rec = this.record(infoHash)
     const meta = this.metas.get(infoHash)
     if (!meta) return rec.path
-    return meta.files.length > 1 ? this.outputFolder(rec, meta) : join(rec.path, meta.files[0].path)
+    return meta.multi ? this.outputFolder(rec, meta) : join(rec.path, meta.files[0].path)
   }
 
   filePath(infoHash: string, index: number): string {
@@ -370,7 +384,7 @@ export class TorrentManager {
     const meta = this.metas.get(infoHash)
     const file = meta?.files[index]
     if (!meta || !file) throw new Error('File not available (torrent paused or metadata missing)')
-    return join(meta.files.length > 1 ? this.outputFolder(rec, meta) : rec.path, file.path)
+    return join(meta.multi ? this.outputFolder(rec, meta) : rec.path, file.path)
   }
 
   files(infoHash: string): TorrentFileInfo[] {
@@ -384,7 +398,7 @@ export class TorrentManager {
       return {
         index,
         name: f.path.split('/').pop()!,
-        path: meta.files.length > 1 ? `${meta.name}/${f.path}` : f.path,
+        path: meta.multi ? `${meta.name}/${f.path}` : f.path,
         length: f.length,
         downloaded,
         progress: f.length ? Math.min(1, downloaded / f.length) : 1,
@@ -550,7 +564,11 @@ export class TorrentManager {
 
 /** Name and files of a .torrent; paths use "/" and exclude the torrent's name */
 async function metaOf(data: Uint8Array): Promise<Meta> {
-  const parsed = (await parseTorrent(Buffer.from(data))) as unknown as { name?: string | Uint8Array; files?: { path: string; length: number }[] }
+  const parsed = (await parseTorrent(Buffer.from(data))) as unknown as {
+    name?: string | Uint8Array
+    files?: { path: string; length: number }[]
+    info?: { files?: unknown[] }
+  }
   const name = String(parsed.name ?? '')
   const files = (parsed.files ?? []).map((f) => {
     const parts = f.path.split(/[\\/]/)
@@ -558,7 +576,19 @@ async function metaOf(data: Uint8Array): Promise<Meta> {
     if (parts.length > 1 && parts[0] === name) parts.shift()
     return { path: parts.join('/'), length: f.length }
   })
-  return { name, files }
+  return { name, files, multi: Array.isArray(parsed.info?.files) }
+}
+
+/** Same folder? (the engine reports Windows paths as \\?\C:\...) */
+export function samePath(a: string, b: string) {
+  const norm = (p: string) => {
+    const s = p
+      .replace(/^\\\\\?\\/, '')
+      .replace(/\//g, '\\')
+      .replace(/\\+$/, '')
+    return process.platform === 'win32' ? s.toLowerCase() : s
+  }
+  return norm(a) === norm(b)
 }
 
 /** Torrent names as folder names (the engine is given the folder, so it can't clean it up) */

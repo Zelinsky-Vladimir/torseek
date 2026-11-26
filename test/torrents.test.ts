@@ -1,11 +1,12 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
+import { mkdir } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import { JsonStore } from '../src/main/store'
-import { TorrentManager, type TorrentStoreShape } from '../src/main/torrents'
+import { samePath, TorrentManager, type TorrentStoreShape } from '../src/main/torrents'
 import type { Engine } from '../src/main/engine'
 
 // Drives the real engine (rqbit from build/bin, `npm run engine`) against a second rqbit
@@ -20,7 +21,7 @@ afterEach(async () => {
   for (const c of cleanup.splice(0).reverse()) await c()
 })
 
-async function seeder(files: Record<string, Uint8Array>) {
+async function seeder(files: Record<string, Uint8Array>, { folder = Object.keys(files).length > 1 } = {}) {
   const dir = tmp('seed-')
   const root = join(dir, 'Movie')
   for (const [name, data] of Object.entries(files)) {
@@ -29,7 +30,7 @@ async function seeder(files: Record<string, Uint8Array>) {
   }
   const port = 30000 + Math.floor(Math.random() * 20000)
   const api = port + 1
-  const proc: ChildProcess = spawn(binary, [...OFFLINE, '--listen-port', String(port), '--http-api-listen-addr', `127.0.0.1:${api}`, 'share', Object.keys(files).length > 1 ? root : join(root, Object.keys(files)[0])], { stdio: 'ignore', windowsHide: true })
+  const proc: ChildProcess = spawn(binary, [...OFFLINE, '--listen-port', String(port), '--http-api-listen-addr', `127.0.0.1:${api}`, 'share', folder ? root : join(root, Object.keys(files)[0])], { stdio: 'ignore', windowsHide: true })
   cleanup.push(() => void proc.kill())
   for (let i = 0; i < 50; i++) {
     const list = await fetch(`http://127.0.0.1:${api}/torrents`).then((r) => r.json() as Promise<{ torrents: { info_hash: string }[] }>).catch(() => null)
@@ -43,12 +44,13 @@ async function seeder(files: Record<string, Uint8Array>) {
   throw new Error('seeder did not start')
 }
 
-async function manager(opts: { seed?: boolean } = {}) {
-  const store = new JsonStore<TorrentStoreShape>(join(tmp('store-'), 's.json'), { torrents: [] })
+async function manager(opts: { seed?: boolean; dirs?: { store: string; meta: string; engine: string } } = {}) {
+  const dirs = opts.dirs ?? { store: tmp('store-'), meta: tmp('meta-'), engine: tmp('engine-') }
+  const store = new JsonStore<TorrentStoreShape>(join(dirs.store, 's.json'), { torrents: [] })
   let completed = 0
-  const mgr = new TorrentManager(store, tmp('meta-'), {
+  const mgr = new TorrentManager(store, dirs.meta, {
     engineBinary: binary,
-    engineDir: tmp('engine-'),
+    engineDir: dirs.engine,
     defaultFolder: () => tmpdir(),
     seedAfterDownload: () => !!opts.seed,
     onComplete: () => completed++,
@@ -57,7 +59,7 @@ async function manager(opts: { seed?: boolean } = {}) {
   cleanup.push(() => mgr.destroy())
   await mgr.init()
   const engine = (mgr as unknown as { engine: Engine }).engine
-  return { mgr, store, engine, completed: () => completed }
+  return { mgr, store, engine, dirs, completed: () => completed }
 }
 
 const until = async (cond: () => boolean, ms = 20_000) => {
@@ -107,4 +109,39 @@ describe.skipIf(!existsSync(binary))('torrent manager (rqbit)', () => {
     expect(store.get().torrents).toEqual([])
     expect(existsSync(join(dest, 'Movie'))).toBe(false)
   }, 60_000)
+
+  // A torrent in multi-file mode with a single file still lives in <folder>/<name>/;
+  // 0.2.13 put such torrents straight into <folder> and re-downloaded finished movies.
+  it('keeps one-file folder torrents in their folder and moves them back from the wrong one', async () => {
+    const data = randomBytes(600_000)
+    const s = await seeder({ 'Movie (2002).mkv': data }, { folder: true })
+    const dest = tmp('dl-')
+    // The finished download from before, where every client puts it
+    mkdirSync(join(dest, 'Movie'), { recursive: true })
+    writeFileSync(join(dest, 'Movie', 'Movie (2002).mkv'), data)
+
+    const first = await manager()
+    // What 0.2.13 did: the engine holds it with the parent folder
+    await first.engine.add(s.torrent, { outputFolder: dest })
+    first.store.update((d) => d.torrents.push({ infoHash: s.hash, name: 'Movie', path: dest, addedAt: Date.now(), paused: false, done: true }))
+    await mkdir(first.dirs.meta, { recursive: true })
+    writeFileSync(join(first.dirs.meta, `${s.hash}.torrent`), s.torrent)
+    first.store.flush()
+    await first.mgr.destroy()
+
+    const { mgr, engine } = await manager({ seed: true, dirs: first.dirs })
+    expect(mgr.contentPath(s.hash)).toBe(join(dest, 'Movie'))
+    // Found the finished file where it is: complete without any peer
+    expect(await until(() => mgr.snapshot()[0]?.state === 'seeding')).toBe(true)
+    expect(mgr.snapshot()[0].progress).toBe(1)
+    expect(samePath((await engine.details(s.hash)).output_folder, join(dest, 'Movie'))).toBe(true)
+  }, 60_000)
+})
+
+describe('samePath', () => {
+  it('ignores the Windows long-path prefix, slashes and case', () => {
+    expect(samePath(String.raw`\\?\E:\Movies\ `.trim(), String.raw`e:\movies`)).toBe(process.platform === 'win32')
+    expect(samePath('/data/movies/', '/data/movies')).toBe(true)
+    expect(samePath('/data/movies', '/data/movies/x')).toBe(false)
+  })
 })
