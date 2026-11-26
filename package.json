@@ -130,7 +130,16 @@
       "provider": "github",
       "owner": "Zelinsky-Vladimir",
       "repo": "torseek"
-    }
+    },
+    "fileAssociations": [
+      {
+        "ext": "torrent",
+        "name": "BitTorrent file",
+        "description": "BitTorrent file",
+        "mimeType": "application/x-bittorrent",
+        "role": "Viewer"
+      }
+    ]
   },
   "author": {
     "name": "Vladimir",

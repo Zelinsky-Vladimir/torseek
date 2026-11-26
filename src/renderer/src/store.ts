@@ -242,9 +242,10 @@ api.onSearchEvent((e) => {
 })
 
 api.onTorrents((torrents) => useStore.setState({ torrents }))
-api.onAskSave(({ magnet, name }) =>
+api.onAskSave(({ magnet, torrent, name }) =>
   void useStore.getState().withSaveLocation(name, async (path) => {
-    await api.addMagnet(magnet, path)
+    if (torrent) await api.addTorrentFile(torrent, path)
+    else if (magnet) await api.addMagnet(magnet, path)
   }),
 )
 api.onIndexersChanged(() => void useStore.getState().loadIndexers())

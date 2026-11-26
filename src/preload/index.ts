@@ -31,7 +31,7 @@ const methods: ApiMethod[] = [
   'search', 'cancelSearch',
   'listIndexers', 'setIndexerEnabled', 'updateIndexerSettings', 'testIndexer', 'setIndexerPriority',
   'passChallenge', 'checkTrackers', 'trackerCheckStatus',
-  'download', 'getMagnet', 'probeTracks', 'addMagnet', 'listTorrents', 'torrentFiles',
+  'download', 'getMagnet', 'probeTracks', 'addMagnet', 'addTorrentFile', 'connectivity', 'listTorrents', 'torrentFiles',
   'pauseTorrent', 'resumeTorrent', 'removeTorrent', 'openTorrentFolder', 'openTorrentFile',
   'setFileSelection',
   'getSettings', 'updateSettings', 'chooseDownloadDir', 'chooseFolder', 'openExternal',
@@ -48,7 +48,7 @@ const api = {
   onIndexersChanged: subscribe<void>(IPC.indexersChanged),
   onUpdateStatus: subscribe<UpdateStatus>(IPC.updateStatus),
   onNavigate: subscribe<NavigateTarget>(IPC.navigate),
-  onAskSave: subscribe<{ magnet: string; name: string }>(IPC.askSave),
+  onAskSave: subscribe<{ magnet?: string; torrent?: Uint8Array; name: string }>(IPC.askSave),
 } as unknown as Api
 
 contextBridge.exposeInMainWorld('api', api)

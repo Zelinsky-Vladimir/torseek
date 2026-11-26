@@ -54,7 +54,7 @@ export type SearchEvent =
   /** Live seeders / leechers from public trackers, by info hash */
   | { type: 'seeds'; searchId: string; stats: Record<string, { seeders: number; leechers: number }> }
 
-export type TorrentState = 'metadata' | 'checking' | 'downloading' | 'seeding' | 'paused' | 'done' | 'error'
+export type TorrentState = 'metadata' | 'checking' | 'queued' | 'downloading' | 'seeding' | 'paused' | 'done' | 'error'
 
 export interface TorrentInfo {
   infoHash: string
@@ -63,7 +63,9 @@ export interface TorrentInfo {
   progress: number
   length: number
   downloaded: number
+  /** All-time upload, and upload / size */
   uploaded: number
+  ratio?: number
   downloadSpeed: number
   uploadSpeed: number
   numPeers: number
@@ -105,6 +107,12 @@ export interface AppSettings {
   searchConcurrency: number
   searchTimeoutSec: number
   seedAfterDownload: boolean
+  /** Stop seeding at this ratio (0 = no limit) */
+  seedRatioLimit: number
+  /** Stop seeding after this many hours (0 = no limit) */
+  seedTimeLimitHours: number
+  /** Downloads running at once, the rest wait (0 = no limit) */
+  maxActiveDownloads: number
   showAdult: boolean
   /** KB/s, 0 = unlimited */
   downloadLimit: number
@@ -133,6 +141,16 @@ export interface TrackerCheckStatus {
   checkedAt?: number
   done: number
   total: number
+}
+
+export interface Connectivity {
+  listenPort: number
+  /** Connections other peers opened to us since the engine started */
+  incoming: number
+  /** Peers we're connected to right now */
+  peers: number
+  /** Seconds the engine has been running */
+  uptime: number
 }
 
 export interface TorznabStatus {
@@ -211,7 +229,11 @@ export interface Api {
   /** Folder picker that doesn't touch the settings */
   chooseFolder(defaultPath?: string): Promise<string | null>
   /** A magnet opened from outside (browser) while "ask where to save" is on */
-  onAskSave(cb: (req: { magnet: string; name: string }) => void): () => void
+  onAskSave(cb: (req: { magnet?: string; torrent?: Uint8Array; name: string }) => void): () => void
+  /** A .torrent file's bytes (drag & drop, file picker); path: folder, default when omitted */
+  addTorrentFile(data: Uint8Array, path?: string): Promise<{ infoHash: string }>
+  /** Can peers reach us? */
+  connectivity(): Promise<Connectivity>
   definitionsStatus(): Promise<DefinitionsStatus>
   /** Pull the latest tracker definitions from the Jackett repo and reload trackers */
   updateDefinitions(): Promise<DefinitionsStatus>

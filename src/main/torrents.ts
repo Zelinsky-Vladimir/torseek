@@ -4,7 +4,7 @@ import parseTorrent from 'parse-torrent'
 import type { DownloadTarget } from '../core/indexer'
 import { magnetToInfoHash } from '../core/release'
 import { externalSubtitles, mainVideo, readMediaTracks, type MediaTracks } from '../core/media-tracks'
-import type { TorrentFileInfo, TorrentInfo } from '../shared/api'
+import type { Connectivity, TorrentFileInfo, TorrentInfo } from '../shared/api'
 import { Engine, type EngineTorrent } from './engine'
 import type { JsonStore } from './store'
 
@@ -32,6 +32,12 @@ export interface TorrentRecord {
   source?: { indexerName: string; details?: string }
   /** Audio / subtitle tracks of the main video, read from its header */
   tracks?: MediaTracks
+  /** Bytes uploaded over all sessions */
+  uploaded?: number
+  /** Paused by the seeding limit (not by the user) */
+  seedLimitReached?: boolean
+  /** The user resumed it after the limit: seed without one */
+  ignoreSeedLimit?: boolean
 }
 
 export interface TorrentStoreShape {
@@ -47,6 +53,10 @@ export interface TorrentManagerOptions {
   engineDir: string
   defaultFolder: () => string
   seedAfterDownload: () => boolean
+  /** Stop seeding at this upload/size ratio (0 = no limit) and after this many hours (0 = none) */
+  seedLimits?: () => { ratio: number; hours: number }
+  /** Downloads running at once; the rest wait in a queue (0 = no limit) */
+  maxActiveDownloads?: () => number
   /** Called once when every selected file of a torrent has finished */
   onComplete?: (rec: TorrentRecord) => void
   /** Called after each status poll */
@@ -87,6 +97,10 @@ export class TorrentManager {
   /** Magnets waiting for metadata */
   private resolving = new Map<string, AbortController>()
   private poller?: ReturnType<typeof setInterval>
+  /** Downloads waiting for a free slot */
+  private queued = new Set<string>()
+  /** Engine's per-session upload counter last seen, to add only the difference */
+  private lastUploaded = new Map<string, number>()
   private syncing?: Promise<void>
 
   constructor(
@@ -107,6 +121,7 @@ export class TorrentManager {
       listenPort: port,
       trackers: PUBLIC_TRACKERS,
       extraArgs: opts.engineArgs,
+      onPortChange: (p) => store.update((d) => (d.listenPort = p)),
       log,
     })
     this.engine.onRestart = () => void this.sync()
@@ -203,8 +218,9 @@ export class TorrentManager {
       this.live.set(rec.infoHash, t)
       const state = t.stats?.state
       if (rec.paused && (state === 'live' || state === 'initializing')) await this.engine.pause(rec.infoHash).catch(() => {})
-      if (!rec.paused && state === 'paused') await this.engine.resume(rec.infoHash).catch(() => {})
+      if (!rec.paused && state === 'paused' && !this.queued.has(rec.infoHash)) await this.engine.resume(rec.infoHash).catch(() => {})
     }
+    await this.applyQueue()
   }
 
   /** Adds a record's torrent to the engine; magnets first resolve to a .torrent */
@@ -256,8 +272,11 @@ export class TorrentManager {
         const err = t.stats?.state === 'error' ? (t.stats.error ?? 'Error') : undefined
         if (err) this.errors.set(t.info_hash, err)
         else if (this.errors.has(t.info_hash) && !this.resolving.has(t.info_hash)) this.errors.delete(t.info_hash)
+        this.countUpload(t)
         this.checkComplete(t.info_hash)
+        this.checkSeedLimit(t.info_hash)
       }
+      await this.applyQueue()
       for (const h of [...this.live.keys()]) if (!seen.has(h)) this.live.delete(h)
       // Records the engine lost (crash, deleted session): add them again
       if (this.records().some((r) => !seen.has(r.infoHash) && !this.resolving.has(r.infoHash) && !this.errors.has(r.infoHash))) void this.sync()
@@ -284,6 +303,67 @@ export class TorrentManager {
       this.patch(infoHash, { done: false })
     }
     if (!rec.tracks && t.stats.state === 'live') void this.detectTracksFor(infoHash)
+  }
+
+  private countUpload(t: EngineTorrent) {
+    const now = t.stats?.uploaded_bytes ?? 0
+    const before = this.lastUploaded.get(t.info_hash)
+    this.lastUploaded.set(t.info_hash, now)
+    // First look, or the engine restarted and its counter began again
+    const delta = before === undefined ? 0 : now >= before ? now - before : now
+    if (delta <= 0) return
+    // Kept in memory and written now and then, not on every second of seeding
+    const pending = (this.pendingUpload.get(t.info_hash) ?? 0) + delta
+    this.pendingUpload.set(t.info_hash, pending)
+    if (pending >= 16 * 1024 * 1024) this.flushUpload(t.info_hash)
+  }
+
+  private pendingUpload = new Map<string, number>()
+
+  private flushUpload(infoHash: string) {
+    const pending = this.pendingUpload.get(infoHash) ?? 0
+    this.pendingUpload.delete(infoHash)
+    const rec = this.find(infoHash)
+    if (rec && pending > 0) this.patch(infoHash, { uploaded: (rec.uploaded ?? 0) + pending })
+  }
+
+  /** All-time upload of a torrent */
+  private uploadedOf(rec: TorrentRecord) {
+    return (rec.uploaded ?? 0) + (this.pendingUpload.get(rec.infoHash) ?? 0)
+  }
+
+  private selectedSize(rec: TorrentRecord) {
+    const meta = this.metas.get(rec.infoHash)
+    return meta ? meta.files.reduce((n, f, i) => n + (rec.deselected?.includes(i) ? 0 : f.length), 0) : 0
+  }
+
+  private checkSeedLimit(infoHash: string) {
+    const rec = this.find(infoHash)
+    const limits = this.opts.seedLimits?.()
+    if (!rec?.done || rec.paused || rec.ignoreSeedLimit || !limits) return
+    const size = this.selectedSize(rec)
+    const ratioHit = limits.ratio > 0 && size > 0 && this.uploadedOf(rec) / size >= limits.ratio
+    const timeHit = limits.hours > 0 && !!rec.completedAt && Date.now() - rec.completedAt >= limits.hours * 3600_000
+    if (ratioHit || timeHit) {
+      this.log(`${infoHash}: seeding limit reached`)
+      this.patch(infoHash, { seedLimitReached: true })
+      void this.pause(infoHash)
+    }
+  }
+
+  /** Oldest unfinished downloads run, up to the limit; the rest are paused in the engine */
+  private async applyQueue() {
+    const max = this.opts.maxActiveDownloads?.() ?? 0
+    const waiting = this.records()
+      .filter((r) => !r.paused && !r.done)
+      .sort((a, b) => a.addedAt - b.addedAt)
+    const queued = new Set(max > 0 ? waiting.slice(max).map((r) => r.infoHash) : [])
+    for (const r of waiting) {
+      const state = this.live.get(r.infoHash)?.stats?.state
+      if (queued.has(r.infoHash) && (state === 'live' || state === 'initializing')) await this.engine.pause(r.infoHash).catch(() => {})
+      if (!queued.has(r.infoHash) && state === 'paused') await this.engine.resume(r.infoHash).catch(() => {})
+    }
+    this.queued = queued
   }
 
   // --- Public API ---
@@ -328,7 +408,9 @@ export class TorrentManager {
   }
 
   async resume(infoHash: string) {
-    this.patch(infoHash, { paused: false })
+    const rec = this.find(infoHash)
+    // Resuming a torrent the seeding limit stopped: the user wants it to seed on
+    this.patch(infoHash, { paused: false, ...(rec?.seedLimitReached ? { seedLimitReached: false, ignoreSeedLimit: true } : {}) })
     this.errors.delete(infoHash)
     if (this.live.has(infoHash)) await this.engine.resume(infoHash)
     else await this.startInEngine(this.record(infoHash))
@@ -439,10 +521,12 @@ export class TorrentManager {
           ? rec.paused
             ? 'paused'
             : 'metadata'
-          : rec.paused || s.state === 'paused'
-            ? rec.done
-              ? 'done'
-              : 'paused'
+          : this.queued.has(rec.infoHash)
+            ? 'queued'
+            : rec.paused || s.state === 'paused'
+              ? rec.done
+                ? 'done'
+                : 'paused'
             : s.state === 'initializing'
               ? 'checking'
               : rec.done
@@ -454,13 +538,25 @@ export class TorrentManager {
         progress: length ? Math.min(1, downloaded / length) : rec.done ? 1 : 0,
         length,
         downloaded,
-        uploaded: s?.uploaded_bytes ?? 0,
+        uploaded: this.uploadedOf(rec),
+        ratio: length ? this.uploadedOf(rec) / length : 0,
         downloadSpeed: state === 'downloading' || state === 'seeding' ? downloadSpeed : 0,
         uploadSpeed: state === 'downloading' || state === 'seeding' ? (live?.upload_speed?.mbps ?? 0) * 1024 * 1024 : 0,
         numPeers: state === 'downloading' || state === 'seeding' ? (live?.snapshot?.peer_stats?.live ?? 0) : 0,
         timeRemaining: state === 'downloading' && live?.time_remaining?.duration ? live.time_remaining.duration.secs * 1000 : 0,
       }
     })
+  }
+
+  /** How reachable we are: incoming connections other peers made since the engine started */
+  async connectivity(): Promise<Connectivity> {
+    const session = await this.engine.sessionStats()
+    let incoming = 0
+    for (const hash of this.live.keys()) {
+      const peers = await this.engine.peerStats(hash).catch(() => ({}))
+      for (const p of Object.values(peers)) incoming += p.counters?.incoming_connections ?? 0
+    }
+    return { listenPort: this.engine.listenPort, incoming, peers: session.peers?.live ?? 0, uptime: session.uptime_seconds }
   }
 
   /** Active (not paused, not finished) transfers, for the tray tooltip. */
@@ -470,6 +566,7 @@ export class TorrentManager {
 
   async destroy() {
     clearInterval(this.poller)
+    for (const h of [...this.pendingUpload.keys()]) this.flushUpload(h)
     for (const c of this.resolving.values()) c.abort()
     await this.engine.stop()
   }

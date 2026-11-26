@@ -2,6 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { randomBytes } from 'node:crypto'
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs'
 import { mkdir } from 'node:fs/promises'
+import { createServer } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
@@ -14,7 +15,7 @@ import type { Engine } from '../src/main/engine'
 // seeder is introduced as a peer directly.
 
 const binary = join(__dirname, '..', 'build', 'bin', process.platform, process.platform === 'win32' ? 'rqbit.exe' : 'rqbit')
-const OFFLINE = ['--disable-dht', '--disable-dht-persistence', '--disable-trackers', '--disable-upnp-port-forward', '--disable-lsd']
+const OFFLINE = ['--disable-dht', '--disable-trackers', '--disable-upnp-port-forward', '--disable-lsd']
 const tmp = (p: string) => mkdtempSync(join(tmpdir(), p))
 const cleanup: (() => Promise<void> | void)[] = []
 afterEach(async () => {
@@ -44,7 +45,9 @@ async function seeder(files: Record<string, Uint8Array>, { folder = Object.keys(
   throw new Error('seeder did not start')
 }
 
-async function manager(opts: { seed?: boolean; dirs?: { store: string; meta: string; engine: string } } = {}) {
+async function manager(
+  opts: { seed?: boolean; dirs?: { store: string; meta: string; engine: string }; maxActive?: number; seedHours?: number } = {},
+) {
   const dirs = opts.dirs ?? { store: tmp('store-'), meta: tmp('meta-'), engine: tmp('engine-') }
   const store = new JsonStore<TorrentStoreShape>(join(dirs.store, 's.json'), { torrents: [] })
   let completed = 0
@@ -54,6 +57,8 @@ async function manager(opts: { seed?: boolean; dirs?: { store: string; meta: str
     defaultFolder: () => tmpdir(),
     seedAfterDownload: () => !!opts.seed,
     onComplete: () => completed++,
+    seedLimits: () => ({ ratio: 0, hours: opts.seedHours ?? 0 }),
+    maxActiveDownloads: () => opts.maxActive ?? 0,
     engineArgs: OFFLINE,
   })
   cleanup.push(() => mgr.destroy())
@@ -135,6 +140,47 @@ describe.skipIf(!existsSync(binary))('torrent manager (rqbit)', () => {
     expect(await until(() => mgr.snapshot()[0]?.state === 'seeding')).toBe(true)
     expect(mgr.snapshot()[0].progress).toBe(1)
     expect(samePath((await engine.details(s.hash)).output_folder, join(dest, 'Movie'))).toBe(true)
+  }, 60_000)
+
+  it('runs only as many downloads as allowed and starts the next when a slot frees up', async () => {
+    const a = await seeder({ 'a.bin': randomBytes(200_000) })
+    const b = await seeder({ 'b.bin': randomBytes(200_000) })
+    const { mgr } = await manager({ maxActive: 1 })
+    const dest = tmp('dl-')
+    await mgr.add({ kind: 'torrent', data: a.torrent }, dest)
+    await new Promise((r) => setTimeout(r, 20))
+    await mgr.add({ kind: 'torrent', data: b.torrent }, dest)
+    const state = (h: string) => mgr.snapshot().find((t) => t.infoHash === h)?.state
+    // No peers yet: the first waits for data, the second for a slot
+    expect(await until(() => state(b.hash) === 'queued' && state(a.hash) === 'downloading')).toBe(true)
+    await mgr.remove(a.hash, true)
+    expect(await until(() => state(b.hash) === 'downloading')).toBe(true)
+  }, 60_000)
+
+  it('stops seeding at the time limit and seeds on when the user resumes', async () => {
+    const s = await seeder({ 'a.bin': randomBytes(200_000) })
+    const { mgr, store, engine } = await manager({ seed: true, seedHours: 2 / 3600 })
+    await mgr.add({ kind: 'torrent', data: s.torrent }, tmp('dl-'))
+    expect(await until(() => mgr.snapshot()[0]?.state !== 'metadata')).toBe(true)
+    await engine.addPeers(s.hash, [s.peer])
+    expect(await until(() => store.get().torrents[0]?.done === true)).toBe(true)
+    expect(await until(() => store.get().torrents[0]?.paused === true)).toBe(true)
+    expect(store.get().torrents[0].seedLimitReached).toBe(true)
+    await mgr.resume(s.hash)
+    await new Promise((r) => setTimeout(r, 4000))
+    expect(store.get().torrents[0]).toMatchObject({ paused: false, ignoreSeedLimit: true })
+    expect(mgr.snapshot()[0].state).toBe('seeding')
+  }, 60_000)
+
+  it('moves to another port when its listen port is taken', async () => {
+    const blocker = createServer().listen(0)
+    await new Promise((r) => blocker.once('listening', r))
+    cleanup.push(() => void blocker.close())
+    const taken = (blocker.address() as { port: number }).port
+    const dirs = { store: tmp('store-'), meta: tmp('meta-'), engine: tmp('engine-') }
+    writeFileSync(join(dirs.store, 's.json'), JSON.stringify({ torrents: [], listenPort: taken }))
+    const { store } = await manager({ dirs })
+    expect(store.get().listenPort).not.toBe(taken)
   }, 60_000)
 })
 

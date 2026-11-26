@@ -1,5 +1,5 @@
 import { randomUUID } from 'node:crypto'
-import { join } from 'node:path'
+import { join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, safeStorage, shell, type WebContents } from 'electron'
 import { HttpClient } from '../core/http'
@@ -18,12 +18,13 @@ import { lookupTitle } from './titles'
 import { findTitleNames, variantFor } from './title-names'
 import { resolveTheme, THEMES } from '../shared/themes'
 import { releaseHash } from '../core/release'
+import type { DownloadTarget } from '../core/indexer'
 import { scrapeAll, type SwarmStats } from '../core/scrape'
 import { TorznabServer } from '../core/torznab'
 import type { Release as CoreRelease } from '../core/release'
 import { randomBytes } from 'node:crypto'
-import { appendFileSync, renameSync, statSync } from 'node:fs'
-import { rm } from 'node:fs/promises'
+import { appendFileSync, renameSync, statSync, existsSync } from 'node:fs'
+import { rm, readFile } from 'node:fs/promises'
 
 const here = fileURLToPath(new URL('.', import.meta.url))
 // Console in development; a small rotating file in the profile for installed builds
@@ -345,6 +346,14 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
       if (target.kind === 'magnet') return target.uri
       throw new Error('This tracker only provides .torrent files')
     },
+    async addTorrentFile(data, path) {
+      const res = await torrents.add({ kind: 'torrent', data: new Uint8Array(data) }, useDir(path))
+      refreshTray()
+      return res
+    },
+    async connectivity() {
+      return torrents.connectivity()
+    },
     async addMagnet(uri, path) {
       const res = await torrents.addMagnet(uri.trim(), useDir(path))
       refreshTray()
@@ -525,24 +534,34 @@ function useDir(path?: string): string {
   return path
 }
 
+/** Magnet links and .torrent files handed over by the OS (browser link, double-click) */
 function handleMagnetArgs(argv: string[]) {
   const magnet = argv.find((a) => a.startsWith('magnet:'))
-  if (!magnet) return
+  const file = argv.find((a) => /.torrent$/i.test(a) && existsSync(a))
+  if (magnet) offerDownload({ magnet, name: new URLSearchParams(magnet.split('?')[1] ?? '').get('dn') || magnet.slice(0, 60) })
+  if (file) {
+    void readFile(file)
+      .then((data) => offerDownload({ torrent: new Uint8Array(data), name: basename(file, '.torrent') }))
+      .catch((e) => log(`torrent file: ${e.message}`))
+  }
+}
+
+function offerDownload(req: { magnet?: string; torrent?: Uint8Array; name: string }) {
   if (settings().askWhereToSave && mainWindow && !mainWindow.isDestroyed()) {
     showWindow('downloads')
-    const name = new URLSearchParams(magnet.split('?')[1] ?? '').get('dn') || magnet.slice(0, 60)
-    const send = () => sendToUi(IPC.askSave, { magnet, name })
+    const send = () => sendToUi(IPC.askSave, req)
     if (mainWindow.webContents.isLoading()) mainWindow.webContents.once('did-finish-load', () => setTimeout(send, 500))
     else send()
     return
   }
+  const target: DownloadTarget = req.torrent ? { kind: 'torrent', data: req.torrent } : { kind: 'magnet', uri: req.magnet! }
   void torrents
-    .addMagnet(magnet, settings().downloadDir)
+    .add(target, settings().downloadDir)
     .then(() => {
       refreshTray()
       showWindow('downloads')
     })
-    .catch((e) => log(`magnet: ${e.message}`))
+    .catch((e) => log(`add: ${e.message}`))
 }
 
 app.on('second-instance', (_e, argv) => {
@@ -550,10 +569,14 @@ app.on('second-instance', (_e, argv) => {
   showWindow()
 })
 
-// macOS hands protocol links over this event
+// macOS hands protocol links and opened files over these events
 app.on('open-url', (e, url) => {
   e.preventDefault()
   if (torrents) handleMagnetArgs([url])
+})
+app.on('open-file', (e, path) => {
+  e.preventDefault()
+  if (torrents) handleMagnetArgs([path])
 })
 
 app.whenReady().then(async () => {
@@ -568,6 +591,9 @@ app.whenReady().then(async () => {
     searchConcurrency: 12,
     searchTimeoutSec: 25,
     seedAfterDownload: true,
+    seedRatioLimit: 0,
+    seedTimeLimitHours: 0,
+    maxActiveDownloads: 3,
     showAdult: false,
     downloadLimit: 0,
     uploadLimit: 0,
@@ -616,6 +642,8 @@ app.whenReady().then(async () => {
       engineDir: join(app.getPath('userData'), 'engine'),
       defaultFolder: () => settings().downloadDir,
       seedAfterDownload: () => settings().seedAfterDownload,
+      seedLimits: () => ({ ratio: settings().seedRatioLimit, hours: settings().seedTimeLimitHours }),
+      maxActiveDownloads: () => settings().maxActiveDownloads,
       onComplete: (rec) => {
         notifyComplete(rec.name)
         refreshTray()

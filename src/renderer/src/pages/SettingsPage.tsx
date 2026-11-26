@@ -1,6 +1,6 @@
 import { useEffect, useState, type ReactNode } from 'react'
 import { Copy, Download, FolderOpen, KeyRound, RefreshCw } from 'lucide-react'
-import type { AppSettings, DefinitionsStatus, TorznabStatus } from '../../../shared/api'
+import type { AppSettings, Connectivity, DefinitionsStatus, TorznabStatus } from '../../../shared/api'
 import { api } from '../api'
 import { LANGUAGES, t, type Key } from '../i18n'
 import { ACCENT_IDS, ACCENTS, resolveTheme, THEME_IDS, THEMES, type AccentId, type Palette, type ThemeSetting } from '../../../shared/themes'
@@ -68,9 +68,23 @@ export function SettingsPage() {
             <Row label={t('set.askSave')} hint={t('set.askSaveHint')}>
               <Toggle checked={settings.askWhereToSave} onChange={(v) => save({ askWhereToSave: v })} />
             </Row>
+            <Row label={t('set.maxActive')} hint={t('set.maxActiveHint')}>
+              <Choice value={settings.maxActiveDownloads} options={[1, 2, 3, 4, 5, 8, 10, 0]} label={(n) => (n ? String(n) : t('set.unlimited'))} onChange={(v) => save({ maxActiveDownloads: v })} />
+            </Row>
             <Row label={t('set.seed')} hint={t('set.seedHint')}>
               <Toggle checked={settings.seedAfterDownload} onChange={(v) => save({ seedAfterDownload: v })} />
             </Row>
+            {settings.seedAfterDownload && (
+              <>
+                <Row label={t('set.seedRatio')} hint={t('set.seedRatioHint')}>
+                  <Choice value={settings.seedRatioLimit} options={[0, 0.5, 1, 1.5, 2, 3, 5]} label={(n) => (n ? String(n) : t('set.unlimited'))} onChange={(v) => save({ seedRatioLimit: v })} />
+                </Row>
+                <Row label={t('set.seedTime')} hint={t('set.seedTimeHint')}>
+                  <Choice value={settings.seedTimeLimitHours} options={[0, 1, 6, 12, 24, 48, 168]} label={(n) => (n ? t('set.hours', { n }) : t('set.unlimited'))} onChange={(v) => save({ seedTimeLimitHours: v })} />
+                </Row>
+              </>
+            )}
+            <ConnectivityRow />
             <Row label={t('set.dlLimit')} hint={t('set.limitHint')}>
               <NumberInput value={settings.downloadLimit} onCommit={(v) => save({ downloadLimit: v })} />
             </Row>
@@ -344,6 +358,41 @@ function Row({ label, hint, children }: { label: string; hint?: string; children
       </div>
       <div className="w-auto max-w-[60%] shrink-0">{children}</div>
     </div>
+  )
+}
+
+function Choice({ value, options, label, onChange }: { value: number; options: number[]; label: (n: number) => string; onChange: (v: number) => void }) {
+  return (
+    <select value={value} onChange={(e) => onChange(Number(e.target.value))} className="h-9 rounded-lg border border-line bg-panel-2 px-2 text-[13px] outline-none">
+      {options.map((n) => (
+        <option key={n} value={n}>
+          {label(n)}
+        </option>
+      ))}
+    </select>
+  )
+}
+
+// Whether other peers can open connections to us. Behind carrier NAT (no public IPv4)
+// nothing can, and only peers with an open port are reachable.
+function ConnectivityRow() {
+  const [c, setC] = useState<Connectivity | null>(null)
+  useEffect(() => {
+    const load = () => void api.connectivity().then(setC).catch(() => {})
+    load()
+    const id = setInterval(load, 10_000)
+    return () => clearInterval(id)
+  }, [])
+  if (!c) return null
+  const ok = c.incoming > 0
+  const early = !ok && (c.uptime < 600 || c.peers === 0)
+  return (
+    <Row label={t('set.incoming')} hint={ok ? t('set.incomingOk', { n: c.incoming }) : early ? t('set.incomingWait') : t('set.incomingNone', { port: c.listenPort })}>
+      <span className={cx('flex items-center gap-2 text-[13px] font-medium', ok ? 'text-good' : early ? 'text-muted' : 'text-warn')}>
+        <span className={cx('size-2 rounded-full', ok ? 'bg-good' : early ? 'bg-faint' : 'bg-warn')} />
+        {ok ? t('set.incomingOpen') : early ? t('set.incomingChecking') : t('set.incomingClosed')}
+      </span>
+    </Row>
   )
 }
 

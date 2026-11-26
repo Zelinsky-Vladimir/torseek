@@ -1,5 +1,5 @@
-import { useState } from 'react'
-import { ArrowDown, ArrowUp, ChevronDown, FolderOpen, Inbox, Magnet, Pause, Play, Trash2, Users } from 'lucide-react'
+import { useRef, useState } from 'react'
+import { ArrowDown, ArrowUp, ChevronDown, FileUp, FolderOpen, Inbox, Magnet, Pause, Play, Trash2, Users } from 'lucide-react'
 import { FilesPanel } from '../components/FilesPanel'
 import type { TorrentInfo, TorrentState } from '../../../shared/api'
 import { api } from '../api'
@@ -12,6 +12,7 @@ import { RealTrackBadges } from '../components/TrackBadges'
 const STATE_LABEL: Record<TorrentState, Key> = {
   metadata: 'dl.state.metadata',
   checking: 'dl.state.checking',
+  queued: 'dl.state.queued',
   downloading: 'dl.state.downloading',
   seeding: 'dl.state.seeding',
   paused: 'dl.state.paused',
@@ -30,8 +31,24 @@ export function DownloadsPage() {
   const totalDown = torrents.reduce((s, t) => s + t.downloadSpeed, 0)
   const totalUp = torrents.reduce((s, t) => s + t.uploadSpeed, 0)
   const shown = torrents.filter((t) =>
-    filter === 'all' ? true : filter === 'active' ? ['downloading', 'metadata', 'checking'].includes(t.state) : ['seeding', 'done'].includes(t.state),
+    filter === 'all' ? true : filter === 'active' ? ['downloading', 'metadata', 'checking', 'queued'].includes(t.state) : ['seeding', 'done'].includes(t.state),
   )
+
+  // .torrent files: the picker next to the magnet field, or dropped anywhere on the page
+  const fileInput = useRef<HTMLInputElement>(null)
+  const [dragging, setDragging] = useState(false)
+  const addFiles = async (files: FileList | File[]) => {
+    for (const file of [...files].filter((f) => /\.torrent$/i.test(f.name))) {
+      const data = new Uint8Array(await file.arrayBuffer())
+      await useStore.getState().withSaveLocation(file.name.replace(/\.torrent$/i, ''), async (path) => {
+        try {
+          await api.addTorrentFile(data, path)
+        } catch (e) {
+          toast({ kind: 'error', text: errorText(e) })
+        }
+      })
+    }
+  }
 
   const addMagnet = async () => {
     if (!magnet.trim().startsWith('magnet:')) return toast({ kind: 'error', text: t('dl.badMagnet') })
@@ -47,7 +64,26 @@ export function DownloadsPage() {
   }
 
   return (
-    <div className="flex h-full flex-col">
+    <div
+      className="relative flex h-full flex-col"
+      onDragOver={(e) => {
+        if ([...e.dataTransfer.items].some((i) => i.kind === 'file')) {
+          e.preventDefault()
+          setDragging(true)
+        }
+      }}
+      onDragLeave={(e) => e.currentTarget === e.target && setDragging(false)}
+      onDrop={(e) => {
+        e.preventDefault()
+        setDragging(false)
+        void addFiles(e.dataTransfer.files)
+      }}
+    >
+      {dragging && (
+        <div className="pointer-events-none absolute inset-3 z-30 flex items-center justify-center rounded-2xl border-2 border-dashed border-accent bg-accent/10 text-[15px] font-medium text-fg">
+          {t('dl.dropHere')}
+        </div>
+      )}
       <div className="drag flex items-center gap-4 border-b border-line/70 px-6 pb-3 pt-3.5">
         <h1 className="text-[17px] font-semibold">{t('dl.title')}</h1>
         <div className="no-drag flex items-center gap-1 rounded-lg bg-panel p-0.5 text-[12.5px]">
@@ -78,6 +114,20 @@ export function DownloadsPage() {
           <Button type="submit" icon={<Magnet className="size-4" />} disabled={!magnet.trim()}>
             {t('dl.add')}
           </Button>
+          <IconButton type="button" label={t('dl.openTorrent')} onClick={() => fileInput.current?.click()}>
+            <FileUp className="size-4" />
+          </IconButton>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".torrent,application/x-bittorrent"
+            multiple
+            hidden
+            onChange={(e) => {
+              if (e.target.files) void addFiles(e.target.files)
+              e.target.value = ''
+            }}
+          />
         </form>
       </div>
 
@@ -131,6 +181,12 @@ function TorrentRow({ t, onRemove }: { t: TorrentInfo; onRemove: () => void }) {
               <span className="flex items-center gap-1">
                 <Users className="size-3" />
                 {t.numPeers}
+              </span>
+            )}
+            {(t.state === 'seeding' || t.state === 'done') && t.uploaded > 0 && (
+              <span title={tr('dl.ratioHint')}>
+                <ArrowUp className="mr-0.5 inline size-3 -translate-y-px text-good" />
+                {formatBytes(t.uploaded)} · {tr('dl.ratio', { r: (t.ratio ?? 0).toFixed(2) })}
               </span>
             )}
             {t.partial && <span className="text-warn">{tr('dl.partial')}</span>}
