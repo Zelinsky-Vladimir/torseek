@@ -94,6 +94,9 @@ export class Engine {
       '-v', 'warn',
       '--http-api-listen-addr', `127.0.0.1:${apiPort}`,
       '--listen-port', String(this.opts.listenPort),
+      // uTP reaches peers TCP can't (behind NAT, uTP-only clients): on a 70-seed torrent
+      // behind carrier NAT, 12 live peers instead of 8
+      '--experimental-enable-utp-listen',
       '--trackers-filename', trackersFile,
       ...(this.opts.extraArgs ?? []),
       'server', 'start',
@@ -104,7 +107,12 @@ export class Engine {
     const proc = spawn(this.opts.binary, args, { stdio: ['ignore', 'pipe', 'pipe'], windowsHide: true })
     this.proc = proc
     const tail = (d: Buffer) => {
-      for (const line of d.toString().split(/\r?\n/)) if (line.trim()) this.log(line.trim().slice(0, 500))
+      for (const raw of d.toString().split(/\r?\n/)) {
+        // Strip terminal colours; skip a tracker that answers with ICMP every few minutes
+        const line = raw.replace(/\x1b\[[0-9;]*m/g, '').trim()
+        if (!line || /tracker_comms_udp.*recv_from/.test(line)) continue
+        this.log(line.slice(0, 500))
+      }
     }
     proc.stdout?.on('data', tail)
     proc.stderr?.on('data', tail)

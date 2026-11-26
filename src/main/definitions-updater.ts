@@ -73,6 +73,16 @@ export class DefinitionsUpdater {
     const result: UpdateResult = { checkedAt: Date.now(), updated: 0, added: 0, removed: 0, total: 0 }
 
     const skipped = (manifest.skipped ??= {})
+    // Older versions downloaded every definition; drop the non-public ones once (and
+    // remember them as skipped, so they aren't fetched again). Not counted as "removed".
+    for (const name of Object.keys(manifest.files)) {
+      const text = await readFile(join(this.userDir, name), 'utf8').catch(() => undefined)
+      if (text === undefined || isPublic(text)) continue
+      await rm(join(this.userDir, name), { force: true })
+      skipped[name] = manifest.files[name]
+      delete manifest.files[name]
+    }
+
     const stale: { file: (typeof remote)[number]; existed: boolean }[] = []
     for (const f of remote) {
       if (skipped[f.name] === f.sha) continue
