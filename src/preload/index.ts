@@ -29,9 +29,9 @@ const subscribe =
 
 const methods: ApiMethod[] = [
   'search', 'cancelSearch',
-  'listIndexers', 'setIndexerEnabled', 'updateIndexerSettings', 'testIndexer', 'setIndexerPriority',
+  'listIndexers', 'setIndexerEnabled', 'updateIndexerSettings', 'testIndexer', 'setIndexerPriority', 'resetTrackers',
   'passChallenge', 'checkTrackers', 'trackerCheckStatus',
-  'download', 'getMagnet', 'probeTracks', 'addMagnet', 'addTorrentFile', 'connectivity', 'listTorrents', 'torrentFiles',
+  'download', 'getMagnet', 'probeTracks', 'addMagnet', 'addTorrentFile', 'connectivity', 'engineStatus', 'retryEngine', 'diagnostics', 'openLogFolder', 'listTorrents', 'torrentFiles',
   'pauseTorrent', 'resumeTorrent', 'removeTorrent', 'openTorrentFolder', 'openTorrentFile',
   'setFileSelection',
   'getSettings', 'updateSettings', 'chooseDownloadDir', 'chooseFolder', 'openExternal',

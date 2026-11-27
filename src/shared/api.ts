@@ -201,6 +201,8 @@ export interface Api {
   updateIndexerSettings(id: string, values: IndexerSettings): Promise<IndexerInfo>
   testIndexer(id: string): Promise<IndexerInfo>
   setIndexerPriority(id: string, priority: IndexerInfo['priority']): Promise<IndexerInfo>
+  /** Recommended trackers on, the rest off */
+  resetTrackers(): Promise<IndexerInfo[]>
   /** Open the site so a Cloudflare / DDoS-Guard check can complete */
   passChallenge(id: string): Promise<ChallengeResult>
   /** Test every tracker in the background (progress via onIndexersChanged) */
@@ -234,6 +236,12 @@ export interface Api {
   addTorrentFile(data: Uint8Array, path?: string): Promise<{ infoHash: string }>
   /** Can peers reach us? */
   connectivity(): Promise<Connectivity>
+  /** Why the torrent engine isn't running, if it isn't */
+  engineStatus(): Promise<{ error?: string }>
+  retryEngine(): Promise<{ error?: string }>
+  /** Version, system, engine and tracker state plus the end of the log, to send when something's wrong */
+  diagnostics(): Promise<string>
+  openLogFolder(): Promise<void>
   definitionsStatus(): Promise<DefinitionsStatus>
   /** Pull the latest tracker definitions from the Jackett repo and reload trackers */
   updateDefinitions(): Promise<DefinitionsStatus>

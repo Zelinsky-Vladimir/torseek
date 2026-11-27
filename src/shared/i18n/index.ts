@@ -99,6 +99,7 @@ export function translator(lang: Lang) {
       [/^Unsupported magnet link$/, () => t('err.badMagnet')],
       [/^No peers sent the (torrent|video header) in time/, () => t('err.probeTimeout')],
       [/^No video in this torrent/, () => t('err.noVideo')],
+      [/^Torrent engine (not found|exited|did not start)/, () => t('err.engine')],
       [/^fetch failed/, () => t('err.connect')],
       [/aborted due to timeout/i, () => t('err.timeout')],
     ]

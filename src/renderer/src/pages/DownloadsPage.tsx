@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { ArrowDown, ArrowUp, ChevronDown, FileUp, FolderOpen, Inbox, Magnet, Pause, Play, Trash2, Users } from 'lucide-react'
 import { FilesPanel } from '../components/FilesPanel'
 import type { TorrentInfo, TorrentState } from '../../../shared/api'
@@ -131,6 +131,7 @@ export function DownloadsPage() {
         </form>
       </div>
 
+      <EngineBanner />
       <div className="min-h-0 flex-1 overflow-y-auto px-3 py-2">
         {shown.length === 0 ? (
           <EmptyState icon={<Inbox className="size-6" />} title={torrents.length ? t('dl.noneTitle') : t('dl.emptyTitle')}>
@@ -142,6 +143,40 @@ export function DownloadsPage() {
       </div>
 
       {removing && <RemoveDialog t={removing} onClose={() => setRemoving(null)} />}
+    </div>
+  )
+}
+
+// The engine (rqbit.exe) couldn't start: say why and offer a retry. Search keeps working.
+function EngineBanner() {
+  const [error, setError] = useState<string | undefined>()
+  const [busy, setBusy] = useState(false)
+  useEffect(() => {
+    const load = () => void api.engineStatus().then((s) => setError(s.error)).catch(() => {})
+    load()
+    const id = setInterval(load, 5000)
+    return () => clearInterval(id)
+  }, [])
+  if (!error) return null
+  return (
+    <div className="mx-6 mt-3 flex items-start gap-3 rounded-xl border border-bad/30 bg-bad/10 px-4 py-3 text-[13px]">
+      <div className="min-w-0 flex-1">
+        <div className="font-medium text-bad">{translateError(error)}</div>
+        <div className="mt-0.5 truncate text-[12px] text-muted selectable" title={error}>
+          {error}
+        </div>
+      </div>
+      <Button
+        size="sm"
+        loading={busy}
+        onClick={async () => {
+          setBusy(true)
+          setError((await api.retryEngine()).error)
+          setBusy(false)
+        }}
+      >
+        {t('dl.retryEngine')}
+      </Button>
     </div>
   )
 }

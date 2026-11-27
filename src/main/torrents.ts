@@ -133,9 +133,32 @@ export class TorrentManager {
     await rm(join(this.metaDir, 'probe'), { recursive: true, force: true }).catch(() => {})
     await rm(join(this.metaDir, 'dht-nodes.json'), { force: true }).catch(() => {})
     for (const rec of this.records()) await this.loadMeta(rec.infoHash)
-    await this.engine.start()
-    await this.sync()
     this.poller = setInterval(() => void this.poll(), 1000)
+    await this.connect()
+  }
+
+  /** Why the engine isn't running (e.g. an antivirus removed rqbit.exe); undefined when it is */
+  engineError?: string
+
+  /** Try to start the engine now (the "Retry" button) */
+  async retryEngine(): Promise<string | undefined> {
+    await this.connect()
+    return this.engineError
+  }
+
+  /** Start the engine; if it can't, keep the app usable and try again every 30 s */
+  private retryTimer?: ReturnType<typeof setTimeout>
+  private async connect() {
+    clearTimeout(this.retryTimer)
+    try {
+      await this.engine.start()
+      this.engineError = undefined
+      await this.sync()
+    } catch (e) {
+      this.engineError = (e as Error).message
+      this.log(`engine: ${this.engineError}`)
+      this.retryTimer = setTimeout(() => void this.connect(), 30_000)
+    }
   }
 
   private records(): TorrentRecord[] {
@@ -258,7 +281,7 @@ export class TorrentManager {
 
   private polling = false
   private async poll() {
-    if (this.polling) return
+    if (this.polling || this.engineError) return
     this.polling = true
     try {
       const list = await this.engine.list()
@@ -511,7 +534,7 @@ export class TorrentManager {
     return this.records().map((rec) => {
       const t = this.live.get(rec.infoHash)
       const s = t?.stats
-      const error = this.errors.get(rec.infoHash) ?? (s?.state === 'error' ? (s.error ?? 'Error') : undefined)
+      const error = this.errors.get(rec.infoHash) ?? (s?.state === 'error' ? (s.error ?? 'Error') : undefined) ?? (rec.paused ? undefined : this.engineError)
       const base = {
         infoHash: rec.infoHash,
         name: this.metas.get(rec.infoHash)?.name || rec.name,

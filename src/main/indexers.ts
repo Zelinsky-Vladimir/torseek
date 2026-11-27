@@ -21,6 +21,9 @@ const DEFAULT_ENABLED = new Set([
 
 export type Priority = 'high' | 'normal' | 'low'
 
+/** Automatic management never leaves fewer trackers on than this */
+const MIN_ENABLED = 10
+
 // Trackers that start with high priority (searched first, preferred copy of a release)
 const DEFAULT_PRIORITY: Record<string, Priority> = { thepiratebay: 'high', ext: 'high' }
 const PRIORITY_RANK: Record<Priority, number> = { high: 0, normal: 1, low: 2 }
@@ -107,6 +110,8 @@ export class IndexerManager {
       this.indexers.set(ix.id, ix)
     }
     this.log(`loaded ${this.indexers.size} trackers`)
+    // Repairs installs where an earlier check switched (nearly) everything off
+    this.keepMinimum(MIN_ENABLED)
   }
 
   private prefs(id: string): IndexerPrefs {
@@ -174,6 +179,7 @@ export class IndexerManager {
     const ids = [...this.indexers.keys()].filter((id) => !this.unsupported.has(id))
     this.checkStatus = { running: true, checkedAt: this.checkStatus.checkedAt, done: 0, total: ids.length }
     const wanted = new Set(languages.map((l) => l.toLowerCase()))
+    const results: IndexerStatus[] = []
     try {
       await searchAll(
         ids.map((id) => this.get(id)),
@@ -186,11 +192,19 @@ export class IndexerManager {
             this.recordStatus(s)
             if (!['done', 'error', 'blocked', 'timeout'].includes(s.state)) return
             this.checkStatus.done++
-            if (opts.manage) this.manage(s, wanted, !!opts.adult)
+            results.push(s)
             opts.onProgress?.()
           },
         },
       )
+      // Decide only on a run where the network clearly worked: offline, or with most
+      // sites blocked by the provider, every tracker "fails" and switching them off
+      // would leave search with nothing
+      const answered = results.filter((r) => r.state === 'done').length
+      if (opts.manage && answered >= Math.max(5, results.length * 0.25)) {
+        for (const r of results) this.manage(r, wanted, !!opts.adult)
+        this.keepMinimum(MIN_ENABLED)
+      } else if (opts.manage) this.log(`tracker check: only ${answered}/${results.length} answered, nothing changed`)
     } finally {
       const checkedAt = Date.now()
       this.store.update((d) => (d.trackerCheck = { checkedAt }))
@@ -214,6 +228,24 @@ export class IndexerManager {
       // A tracker the user prioritised stays on through a bad day
       this.setPrefs(s.indexerId, { fails, enabled: fails >= 2 && prefs.priority !== 'high' ? false : prefs.enabled })
     }
+  }
+
+  /** Never let automatic management leave search with almost nothing: re-enable the best */
+  private keepMinimum(min: number) {
+    const enabled = this.list().filter((i) => i.enabled).length
+    if (enabled >= min) return
+    const candidates = this.list()
+      .filter((i) => !i.enabled && !i.unsupported && !this.prefs(i.id).manual && (DEFAULT_ENABLED.has(i.id) || i.priority === 'high'))
+      .sort((a, b) => (this.prefs(a.id).fails ?? 0) - (this.prefs(b.id).fails ?? 0))
+    for (const i of candidates.slice(0, min - enabled)) this.setPrefs(i.id, { enabled: true, fails: 0 })
+  }
+
+  /** Back to the recommended set: default trackers on, the rest off, manual choices forgotten */
+  resetToDefaults(): IndexerInfo[] {
+    this.store.update((d) => {
+      for (const [id, p] of Object.entries(d.indexers)) d.indexers[id] = { values: p.values, enabled: DEFAULT_ENABLED.has(id), priority: p.priority }
+    })
+    return this.list()
   }
 
   lastCheckedAt(): number {

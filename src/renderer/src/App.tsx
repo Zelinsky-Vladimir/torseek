@@ -9,6 +9,7 @@ import { TrackersPage } from './pages/TrackersPage'
 import { useStore, type Page } from './store'
 import { t, t as tr } from './i18n'
 import { SaveDialog } from './components/SaveDialog'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import { LanguageSetup } from './components/TrackerLanguages'
 
 export function App() {
@@ -19,10 +20,12 @@ export function App() {
     <div key={lang} className="flex h-full">
       <Sidebar />
       <main className="min-w-0 flex-1 bg-bg">
-        {page === 'search' && <SearchPage />}
-        {page === 'downloads' && <DownloadsPage />}
-        {page === 'trackers' && <TrackersPage />}
-        {page === 'settings' && <SettingsPage />}
+        <ErrorBoundary key={page}>
+          {page === 'search' && <SearchPage />}
+          {page === 'downloads' && <DownloadsPage />}
+          {page === 'trackers' && <TrackersPage />}
+          {page === 'settings' && <SettingsPage />}
+        </ErrorBoundary>
       </main>
       <SaveDialog />
       <LanguageSetup />

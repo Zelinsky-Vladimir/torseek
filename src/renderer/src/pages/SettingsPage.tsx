@@ -128,11 +128,13 @@ export function SettingsPage() {
               <Toggle checked={settings.autoManageTrackers} onChange={(v) => save({ autoManageTrackers: v })} />
             </Row>
             <TrackerCheckRow />
+            <ResetTrackersRow />
             <DefinitionsRow />
           </Section>
 
           <Section title={t('set.section.about')}>
             <UpdatesRow />
+            <DiagnosticsRow />
             <p className="px-4 py-3.5 text-[13px] leading-relaxed text-muted">{t('set.about')}</p>
           </Section>
         </div>
@@ -261,6 +263,44 @@ function MagnetRow() {
   return (
     <Row label={t('set.magnet')} hint={t('set.magnetHint')}>
       <Toggle checked={!!on} disabled={on === null} onChange={async (v) => setOn(await api.setMagnetHandler(v))} />
+    </Row>
+  )
+}
+
+function ResetTrackersRow() {
+  const toast = useStore((s) => s.toast)
+  return (
+    <Row label={t('tr.reset')} hint={t('tr.resetHint')}>
+      <Button
+        onClick={async () => {
+          useStore.setState({ indexers: await api.resetTrackers() })
+          toast({ kind: 'success', text: t('tr.resetDone') })
+        }}
+      >
+        {t('tr.resetButton')}
+      </Button>
+    </Row>
+  )
+}
+
+// When something goes wrong on someone's machine: one click copies everything needed
+function DiagnosticsRow() {
+  const toast = useStore((s) => s.toast)
+  return (
+    <Row label={t('set.diagnostics')} hint={t('set.diagnosticsHint')}>
+      <div className="flex gap-2">
+        <Button
+          onClick={async () => {
+            await navigator.clipboard.writeText(await api.diagnostics())
+            toast({ kind: 'success', text: t('set.diagnosticsCopied') })
+          }}
+        >
+          {t('set.diagnosticsCopy')}
+        </Button>
+        <Button variant="ghost" onClick={() => void api.openLogFolder()}>
+          {t('set.logFolder')}
+        </Button>
+      </div>
     </Row>
   )
 }

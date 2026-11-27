@@ -129,6 +129,9 @@ function createMockApi(): Api {
     onIndexersChanged() {
       return () => {}
     },
+    async resetTrackers() {
+      return structuredClone(indexers)
+    },
     async setIndexerPriority(id: string, priority: IndexerInfo['priority']) {
       const ix = indexers.find((i) => i.id === id)!
       ix.priority = priority
@@ -150,6 +153,16 @@ function createMockApi(): Api {
     async addTorrentFile() {
       return { infoHash: 'd'.repeat(40) }
     },
+    async engineStatus() {
+      return {}
+    },
+    async retryEngine() {
+      return {}
+    },
+    async diagnostics() {
+      return 'Torseek (mock)'
+    },
+    async openLogFolder() {},
     async connectivity() {
       return { listenPort: 40432, incoming: 0, peers: 12, uptime: 900 }
     },

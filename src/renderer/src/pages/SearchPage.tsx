@@ -3,6 +3,7 @@ import { ChevronDown, ExternalLink, Loader2, Search, ShieldAlert, Sparkles, Star
 import { matchesFilters, relevance, type AudioFilter, type SubsFilter } from '../../../core/filters'
 import { groupReleases, type ReleaseGroup } from '../../../core/release'
 import type { IndexerStatus, TitleInfo } from '../../../shared/api'
+import { api } from '../api'
 import { CATEGORY_CHIPS } from '../categories'
 import { ResultHeader, ResultRow } from '../components/ResultRow'
 import { cx } from '../format'
@@ -434,6 +435,17 @@ function Welcome({ enabledCount, onPick }: { enabledCount: number; onPick: (q: s
       </div>
       <h1 className="mt-5 text-[22px] font-semibold tracking-tight">{t('search.welcome.title')}</h1>
       <p className="mt-2 text-[13.5px] leading-relaxed text-muted">{t('search.welcome.text', { n: enabledCount })}</p>
+      {enabledCount < 3 && (
+        <div className="mt-6 w-full rounded-xl border border-warn/30 bg-warn/10 px-4 py-3 text-[13px]">
+          <div className="text-warn">{t('search.fewTrackers', { n: enabledCount })}</div>
+          <button
+            className="mt-2 rounded-lg bg-accent-2 px-3 py-1.5 text-[12.5px] font-medium text-white hover:bg-accent"
+            onClick={async () => useStore.setState({ indexers: await api.resetTrackers() })}
+          >
+            {t('tr.reset')}
+          </button>
+        </div>
+      )}
     </div>
   )
 }

@@ -1,4 +1,5 @@
 import { randomUUID } from 'node:crypto'
+import os from 'node:os'
 import { join, basename } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { app, BrowserWindow, dialog, ipcMain, nativeTheme, Notification, safeStorage, shell, type WebContents } from 'electron'
@@ -137,7 +138,9 @@ async function updateDefinitions(): Promise<DefinitionsStatus> {
     const r = await definitions.update()
     Object.assign(defStatus, { checkedAt: r.checkedAt, lastResult: r, error: undefined })
     if (r.updated || r.added || r.removed) {
-      await indexers.load()
+      // Each startup step is guarded: one failing must not leave the window, search or
+  // self-update dead (an engine blocked by antivirus once took the whole app down)
+  await indexers.load().catch((e) => log(`trackers: ${(e as Error).message}`))
       sendToUi(IPC.indexersChanged)
     }
     log(`definitions: ${r.updated} updated, ${r.added} added, ${r.removed} removed`)
@@ -316,6 +319,9 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     async testIndexer(id) {
       return indexers.test(id)
     },
+    async resetTrackers() {
+      return indexers.resetToDefaults()
+    },
     async setIndexerPriority(id, priority) {
       return indexers.setPriority(id, priority)
     },
@@ -353,6 +359,29 @@ function createApi(sender: () => WebContents): Omit<Api, ApiEvent> {
     },
     async connectivity() {
       return torrents.connectivity()
+    },
+    async engineStatus() {
+      return { error: torrents.engineError }
+    },
+    async retryEngine() {
+      return { error: await torrents.retryEngine() }
+    },
+    async diagnostics() {
+      const list = indexers.list()
+      const tail = await readFile(logFile ?? '', 'utf8')
+        .then((t) => t.split('\n').slice(-80).join('\n'))
+        .catch(() => '(no log)')
+      return [
+        `Torseek ${app.getVersion()} · ${process.platform} ${os.release()} ${process.arch} · Electron ${process.versions.electron}`,
+        `engine: ${torrents.engineError ?? 'running'}`,
+        `trackers: ${list.filter((i) => i.enabled).length} on of ${list.length}; downloads: ${torrents.snapshot().length}`,
+        `update: ${appUpdater.status.state}${appUpdater.status.error ? ' — ' + appUpdater.status.error : ''}`,
+        '',
+        tail,
+      ].join('\n')
+    },
+    async openLogFolder() {
+      await shell.openPath(app.getPath('userData'))
     },
     async addMagnet(uri, path) {
       const res = await torrents.addMagnet(uri.trim(), useDir(path))
@@ -618,6 +647,26 @@ app.whenReady().then(async () => {
     d.settings = { ...defaultSettings, ...d.settings }
   })
 
+  // Self-update comes first: whatever breaks further down, a fixed release can still arrive
+  const automation = !!process.env.TORSEEK_NO_UPDATE
+  let announced: string | undefined
+  appUpdater = new AppUpdater((s) => {
+    sendToUi(IPC.updateStatus, s)
+    if (s.state === 'ready' && s.available && s.available !== announced) {
+      announced = s.available
+      notifyUpdate(s.available)
+    }
+  })
+  if (appUpdater.supported && !automation) {
+    setTimeout(() => void appUpdater.check(), 15_000)
+    // Every push to main is a release, so look often (electron-updater reads the
+    // releases feed on github.com, not the rate-limited REST API)
+    setInterval(() => {
+      if (!['checking', 'downloading', 'ready'].includes(appUpdater.status.state)) void appUpdater.check()
+    }, 60_000)
+  }
+
+
   // All tracker traffic shares one Chromium session with the sign-in / challenge windows
   const ses = trackerSession()
   ses.setUserAgent(browserUserAgent())
@@ -651,12 +700,13 @@ app.whenReady().then(async () => {
     },
     log,
   )
-  await torrents.init()
-  torrents.setLimits(settings().downloadLimit, settings().uploadLimit)
+  void torrents
+    .init()
+    .then(() => torrents.setLimits(settings().downloadLimit, settings().uploadLimit))
+    .catch((e) => log(`torrents: ${(e as Error).message}`))
 
   definitions = new DefinitionsUpdater(bundledDefinitions(), userDefinitions())
-  defStatus.checkedAt = await definitions.lastChecked()
-  const automation = !!process.env.TORSEEK_NO_UPDATE
+  defStatus.checkedAt = await definitions.lastChecked().catch(() => 0)
   // Refresh definitions in the background at most once a day
   if (Date.now() - defStatus.checkedAt > 24 * 3600_000 && !automation) setTimeout(() => void updateDefinitions(), 5000)
   // Daily tracker check, once the user has said which languages they search in
@@ -668,24 +718,7 @@ app.whenReady().then(async () => {
     setInterval(dailyCheck, 3600_000)
   }
 
-  await applyTorznab()
-
-  let announced: string | undefined
-  appUpdater = new AppUpdater((s) => {
-    sendToUi(IPC.updateStatus, s)
-    if (s.state === 'ready' && s.available && s.available !== announced) {
-      announced = s.available
-      notifyUpdate(s.available)
-    }
-  })
-  if (appUpdater.supported && !automation) {
-    setTimeout(() => void appUpdater.check(), 15_000)
-    // Every push to main is a release, so look often (electron-updater reads the
-    // releases feed on github.com, not the rate-limited REST API)
-    setInterval(() => {
-      if (!['checking', 'downloading', 'ready'].includes(appUpdater.status.state)) void appUpdater.check()
-    }, 60_000)
-  }
+  await applyTorznab().catch((e) => log(`torznab: ${(e as Error).message}`))
 
   registerIpc()
   try {
