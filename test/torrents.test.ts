@@ -29,18 +29,23 @@ async function seeder(files: Record<string, Uint8Array>, { folder = Object.keys(
     mkdirSync(join(root, name, '..'), { recursive: true })
     writeFileSync(join(root, name), data)
   }
-  const port = 30000 + Math.floor(Math.random() * 20000)
-  const api = port + 1
-  const proc: ChildProcess = spawn(binary, [...OFFLINE, '--listen-port', String(port), '--http-api-listen-addr', `127.0.0.1:${api}`, 'share', folder ? root : join(root, Object.keys(files)[0])], { stdio: 'ignore', windowsHide: true })
-  cleanup.push(() => void proc.kill())
-  for (let i = 0; i < 50; i++) {
-    const list = await fetch(`http://127.0.0.1:${api}/torrents`).then((r) => r.json() as Promise<{ torrents: { info_hash: string }[] }>).catch(() => null)
-    const hash = list?.torrents[0]?.info_hash
-    if (hash) {
-      const torrent = new Uint8Array(await (await fetch(`http://127.0.0.1:${api}/torrents/${hash}/metadata`)).arrayBuffer())
-      return { hash, torrent, peer: `127.0.0.1:${port}` }
+  // A random port can land in a range Windows reserves (Hyper-V): the seeder then exits
+  // at once and we try another
+  for (let attempt = 0; attempt < 6; attempt++) {
+    const port = 30000 + Math.floor(Math.random() * 20000)
+    const api = port + 1
+    const proc: ChildProcess = spawn(binary, [...OFFLINE, '--listen-port', String(port), '--http-api-listen-addr', `127.0.0.1:${api}`, 'share', folder ? root : join(root, Object.keys(files)[0])], { stdio: 'ignore', windowsHide: true })
+    cleanup.push(() => void proc.kill())
+    for (let i = 0; i < 50 && proc.exitCode === null; i++) {
+      const list = await fetch(`http://127.0.0.1:${api}/torrents`).then((r) => r.json() as Promise<{ torrents: { info_hash: string }[] }>).catch(() => null)
+      const hash = list?.torrents[0]?.info_hash
+      if (hash) {
+        const torrent = new Uint8Array(await (await fetch(`http://127.0.0.1:${api}/torrents/${hash}/metadata`)).arrayBuffer())
+        return { hash, torrent, peer: `127.0.0.1:${port}` }
+      }
+      await new Promise((r) => setTimeout(r, 200))
     }
-    await new Promise((r) => setTimeout(r, 200))
+    proc.kill()
   }
   throw new Error('seeder did not start')
 }
