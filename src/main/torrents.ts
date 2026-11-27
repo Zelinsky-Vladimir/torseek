@@ -273,6 +273,7 @@ export class TorrentManager {
         if (err) this.errors.set(t.info_hash, err)
         else if (this.errors.has(t.info_hash) && !this.resolving.has(t.info_hash)) this.errors.delete(t.info_hash)
         this.countUpload(t)
+        this.smoothSpeed(t)
         this.checkComplete(t.info_hash)
         this.checkSeedLimit(t.info_hash)
       }
@@ -303,6 +304,19 @@ export class TorrentManager {
       this.patch(infoHash, { done: false })
     }
     if (!rec.tracks && t.stats.state === 'live') void this.detectTracksFor(infoHash)
+  }
+
+  /** Speeds averaged over a few seconds, as other clients show them */
+  private speeds = new Map<string, { down: number; up: number }>()
+
+  private smoothSpeed(t: EngineTorrent) {
+    // The engine reports an instant rate that swings 1-12 MB/s second to second when
+    // few peers are connected; an exponential average over ~5 s (one poll per second)
+    const down = (t.stats?.live?.download_speed?.mbps ?? 0) * 1024 * 1024
+    const up = (t.stats?.live?.upload_speed?.mbps ?? 0) * 1024 * 1024
+    const prev = this.speeds.get(t.info_hash)
+    const k = 0.2
+    this.speeds.set(t.info_hash, prev && t.stats?.live ? { down: prev.down + k * (down - prev.down), up: prev.up + k * (up - prev.up) } : { down, up })
   }
 
   private countUpload(t: EngineTorrent) {
@@ -514,7 +528,8 @@ export class TorrentManager {
       const length = picked && s ? picked.reduce((n, f) => n + f.length, 0) : (s?.total_bytes ?? 0)
       const downloaded = picked && s?.file_progress?.length ? picked.reduce((n, f) => n + Math.min(f.length, s.file_progress[f.i] ?? 0), 0) : (s?.progress_bytes ?? 0)
       const live = s?.live
-      const downloadSpeed = (live?.download_speed?.mbps ?? 0) * 1024 * 1024
+      const speed = this.speeds.get(rec.infoHash) ?? { down: 0, up: 0 }
+      const downloadSpeed = speed.down
       const state: TorrentInfo['state'] = error
         ? 'error'
         : !s
@@ -541,9 +556,10 @@ export class TorrentManager {
         uploaded: this.uploadedOf(rec),
         ratio: length ? this.uploadedOf(rec) / length : 0,
         downloadSpeed: state === 'downloading' || state === 'seeding' ? downloadSpeed : 0,
-        uploadSpeed: state === 'downloading' || state === 'seeding' ? (live?.upload_speed?.mbps ?? 0) * 1024 * 1024 : 0,
+        uploadSpeed: state === 'downloading' || state === 'seeding' ? speed.up : 0,
         numPeers: state === 'downloading' || state === 'seeding' ? (live?.snapshot?.peer_stats?.live ?? 0) : 0,
-        timeRemaining: state === 'downloading' && live?.time_remaining?.duration ? live.time_remaining.duration.secs * 1000 : 0,
+        // From the averaged speed, so the estimate doesn't jump either
+        timeRemaining: state === 'downloading' && downloadSpeed > 1024 ? (Math.max(0, length - downloaded) / downloadSpeed) * 1000 : 0,
       }
     })
   }
